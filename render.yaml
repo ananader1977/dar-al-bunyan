@@ -1,0 +1,62 @@
+# One-click deploy on Render: dashboard.render.com -> New -> Blueprint -> pick this repository.
+services:
+  - type: web
+    name: dar-al-bunyan
+    runtime: node
+    plan: starter            # needed for the persistent disk (SQLite database + uploads); the free plan loses data on restart
+    buildCommand: "true"
+    startCommand: node --disable-warning=ExperimentalWarning src/server.js
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_PATH
+        value: /var/data/app.db
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: TRUST_PROXY
+        value: "true"
+      - key: BASE_URL
+        sync: false          # e.g. https://dar-al-bunyan.onrender.com
+      - key: ADMIN1_EMAIL
+        value: ananader1@gmail.com
+      - key: ADMIN1_NAME
+        value: Anas
+      - key: ADMIN1_PASSWORD
+        sync: false
+      - key: ADMIN2_EMAIL
+        sync: false
+      - key: ADMIN2_NAME
+        sync: false
+      - key: ADMIN2_PASSWORD
+        sync: false
+      - key: OPS_EMAIL
+        sync: false
+      - key: OPS_NAME
+        sync: false
+      - key: OPS_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: ananader1@gmail.com
+      - key: SMTP_PASS        # Gmail app password (16 letters)
+        sync: false
+      - key: SMTP_FROM
+        value: Dar Al Bunyan Technical Services <ananader1@gmail.com>
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: PAYMENT_PROVIDER
+        value: mock          # demo payments; switch to stripe + keys when going live

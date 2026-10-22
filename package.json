@@ -1,0 +1,17 @@
+{
+  "name": "dar-al-bunyan-quotations",
+  "version": "1.0.0",
+  "description": "Quotations with approval, invoices, expenses and profit sharing for Dar Al Bunyan Technical Services. Zero dependencies (Node 22 + built-in SQLite).",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.js",
+    "import": "node --disable-warning=ExperimentalWarning scripts/import.js",
+    "google-auth": "node scripts/google-auth.js"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
