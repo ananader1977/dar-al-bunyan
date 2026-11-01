@@ -47,6 +47,16 @@ The owner has a 🗑 button on the lists and a Delete button on each record. Del
 - **Product:** quotations that used it keep their lines.
 - **Invoices that were emailed or paid** (and credited ones) cannot be deleted: UAE VAT rules require a credit note instead. Their quotation cannot be deleted either.
 
+## Install on phones (Android and iPhone)
+
+The app is an installable web app: it gets its own icon, opens full screen without the browser bar, and updates by itself whenever you update GitHub. No app store and no fees.
+
+- **Android (Chrome):** open `https://dar-al-bunyan.onrender.com/app/`, then tap **Install app** at the top (or Chrome menu ⋮ → **Install app** / **Add to Home screen**).
+- **iPhone / iPad (Safari):** open the same link in **Safari**, tap the **Share** button, then **Add to Home Screen** → **Add**.
+- Sign in once with **Keep me signed in** ticked (30 days on that phone).
+- Long-press the icon on Android for shortcuts: New quotation, Add expense, Approvals.
+- Without internet the app shows a "No internet connection" page; data is never stored on the phone.
+
 ## Quick start (your computer)
 
 ```bash

@@ -19,6 +19,27 @@ export const pct = (profit, base) => (base ? Math.round((profit / base) * 1000) 
 export async function loadLookups() { S.lk = await A('GET', '/lookups'); return S.lk; }
 
 window.addEventListener('hashchange', route);
+
+// ---------- installable phone app (Android: Install button; iPhone: Add to Home Screen) ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js').catch(() => {});
+const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { installEvent = null; renderInstall(); toast('App installed: open it from your home screen'); });
+const installSlot = h('span', {});
+function renderInstall() {
+  installSlot.replaceChildren(installEvent && !standalone() ? h('button', { class: 'btn red sm', onclick: async () => { installEvent.prompt(); await installEvent.userChoice.catch(() => {}); installEvent = null; renderInstall(); } }, '⬇ Install app') : '');
+}
+/** iPhone/iPad (Safari has no install button): a short how-to, until it is closed or the app is installed. */
+function iosHint() {
+  if (!isIos() || standalone() || store.get('dab-ios-hint') === 'off') return null;
+  const box = h('div', { class: 'alert info installhint' },
+    h('b', {}, 'Install on your iPhone: '), 'in Safari tap the Share button ', h('span', { class: 'shareicon', 'aria-hidden': 'true' }, '⬆'), ' then ', h('b', {}, 'Add to Home Screen'), '.',
+    h('button', { class: 'btn link', onclick: () => { store.set('dab-ios-hint', 'off'); box.remove(); } }, 'Close'));
+  return box;
+}
 // Phones: tables become one card per row (labels come from the column headers).
 function cardify() {
   for (const t of app.querySelectorAll('table:not([data-cards])')) {
@@ -35,14 +56,23 @@ new MutationObserver(cardify).observe(app, { childList: true, subtree: true });
 boot();
 
 async function boot() {
-  try { S.me = (await api('GET', '/api/me')).user; } catch { return loginView(); }
+  try { S.me = (await api('GET', '/api/me')).user; } catch (e) { return e.status === 0 ? offlineView() : loginView(); }
   S.cfg = await api('GET', '/api/config');
   await loadLookups();
-  nav.replaceChildren(h('span', { class: 'small muted' }, `${S.me.name} · ${S.me.role === 'admin' ? 'Owner' : 'Operations'}`),
+  renderInstall();
+  nav.replaceChildren(installSlot, h('span', { class: 'small muted' }, `${S.me.name} · ${S.me.role === 'admin' ? 'Owner' : 'Operations'}`),
     h('button', { class: 'btn alt sm', onclick: changePassword }, 'Password'),
     h('button', { class: 'btn alt sm', onclick: async () => { await api('POST', '/api/logout', {}); location.hash = ''; location.reload(); } }, 'Sign out'));
   route();
 }
+
+function offlineView() {
+  nav.replaceChildren();
+  app.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card center' }, h('img', { class: 'logo', src: '/mark.png', alt: '', width: 96, height: 96 }),
+    h('h1', {}, 'No internet connection'), h('p', { class: 'muted' }, 'The app needs the internet to show your latest quotations and figures. Check your Wi-Fi or mobile data.'),
+    h('p', {}, h('button', { class: 'btn red', onclick: () => boot() }, 'Try again')))));
+}
+window.addEventListener('online', () => { if (!S.me) boot(); });
 
 function loginView() {
   nav.replaceChildren();
@@ -50,13 +80,15 @@ function loginView() {
   app.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
     h('img', { class: 'logo', src: '/logo.png', alt: 'Dar Al Bunyan Technical Services', width: 150, height: 153 }),
     h('h1', { class: 'center' }, 'Sign in'),
+    iosHint(),
     h('form', { onsubmit: async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(new FormData(e.target));
-      try { await api('POST', '/api/login', v); boot(); } catch (x) { err.textContent = x.message; err.classList.remove('hide'); }
+      try { await api('POST', '/api/login', { email: v.email, password: v.password, remember: v.remember === 'on' }); boot(); } catch (x) { err.textContent = x.message; err.classList.remove('hide'); }
     } },
     field('Email', h('input', { name: 'email', type: 'email', autocomplete: 'username', required: true })),
-    field('Password', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })), err,
+    field('Password', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'remember', checked: standalone() || isIos() || /android/i.test(navigator.userAgent) }), ' Keep me signed in on this device (30 days)'), err,
     h('p', {}, h('button', { class: 'btn block red' }, 'Sign in'))))));
 }
 
@@ -197,7 +229,7 @@ const VIEWS = {
   async dashboard(el) {
     const d = await A('GET', '/dashboard');
     const c = d.counts;
-    const kids = [h('div', { class: 'kpis' },
+    const kids = [iosHint(), h('div', { class: 'kpis' },
       h('div', { class: 'kpi' }, h('b', {}, c.draft + c.rejected), h('span', {}, 'Drafts and returned')),
       h('div', { class: 'kpi red' }, h('b', {}, c.pending), h('span', {}, 'Waiting for approval')),
       h('div', { class: 'kpi' }, h('b', {}, c.approved + c.sent), h('span', {}, 'Approved / sent to customer')),

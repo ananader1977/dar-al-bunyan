@@ -1,0 +1,8 @@
+node_modules/
+data/*
+!data/.gitkeep
+.env
+*.db
+*.db-*
+*.xlsx
+!test/fixtures/*.xlsx

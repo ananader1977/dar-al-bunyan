@@ -1,0 +1,23 @@
+{
+  "id": "/app/",
+  "name": "Dar Al Bunyan - Quotations & Finance",
+  "short_name": "Dar Al Bunyan",
+  "description": "Quotations, invoices, expenses and profit sharing for Dar Al Bunyan Technical Services.",
+  "start_url": "/app/#dashboard",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2a4d",
+  "lang": "en",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New quotation", "url": "/app/#new", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Add expense", "url": "/app/#expenses", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Approvals", "url": "/app/#approvals", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

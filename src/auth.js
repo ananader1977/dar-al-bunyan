@@ -3,6 +3,7 @@ import { HttpError } from './http.js';
 
 const SESSION_COOKIE = 'dab_session';
 const SESSION_TTL_MS = 12 * 3600 * 1000;
+const REMEMBER_TTL_MS = 30 * 24 * 3600 * 1000; // "Keep me signed in" (phones)
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -26,8 +27,8 @@ export function safeEqual(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-function signSession(secret, userId, now) {
-  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: now + SESSION_TTL_MS })).toString('base64url');
+function signSession(secret, userId, now, ttl = SESSION_TTL_MS) {
+  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: now + ttl })).toString('base64url');
   return `${payload}.${hmac(secret, payload)}`;
 }
 
@@ -51,8 +52,9 @@ export function validatePasswordStrength(pw) {
 export function createAuth(ctx) {
   const secret = () => ctx.db.prepare("SELECT value FROM settings WHERE key='_secret'").get().value;
 
-  function startSession(res, userId) {
-    res.setCookie(SESSION_COOKIE, signSession(secret(), userId, ctx.now()), { maxAge: SESSION_TTL_MS / 1000, secure: ctx.config.secureCookies });
+  function startSession(res, userId, remember = false) {
+    const ttl = remember ? REMEMBER_TTL_MS : SESSION_TTL_MS;
+    res.setCookie(SESSION_COOKIE, signSession(secret(), userId, ctx.now(), ttl), { maxAge: ttl / 1000, secure: ctx.config.secureCookies });
   }
   function endSession(res) {
     res.setCookie(SESSION_COOKIE, '', { maxAge: 0, secure: ctx.config.secureCookies });

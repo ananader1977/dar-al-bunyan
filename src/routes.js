@@ -26,10 +26,10 @@ export function registerRoutes(app, ctx) {
   });
   app.post('/api/login', async (req, res) => {
     limit(req, 'login', 10, 10 * 60 * 1000);
-    const { email, password } = await req.json();
+    const { email, password, remember } = await req.json();
     const u = db.prepare('SELECT * FROM users WHERE email=? AND active=1').get(String(email || '').trim().toLowerCase());
     if (!u || !verifyPassword(String(password || ''), u.password_hash)) throw new HttpError(401, 'Wrong email or password.');
-    auth.startSession(res, u.id);
+    auth.startSession(res, u.id, !!remember);
     svc.audit(u, 'signed in', 'user', u.id, u.email);
     res.json({ user: { id: u.id, email: u.email, name: u.name, role: u.role } });
   });
