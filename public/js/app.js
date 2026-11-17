@@ -422,7 +422,7 @@ async function quoteDetail(el, id) {
   const act = (path, body, ok) => run(() => A('POST', `/quotations/${q.id}/${path}`, body || {}), ok).then(reload);
   const margin = pct(q.net - q.cost_total, q.net);
   const actualProfit = d.actualCost != null ? q.net - d.actualCost : null;
-  const editable = ['draft', 'rejected'].includes(q.status) || (isAdmin() && ['pending', 'approved'].includes(q.status));
+  const editable = ['draft', 'rejected'].includes(q.status) || isAdmin();
 
   const buttons = [];
   if (editable) buttons.push(h('a', { class: 'btn alt', href: `#edit/${q.id}` }, 'Edit'));

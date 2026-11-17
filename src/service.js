@@ -229,7 +229,7 @@ export function createService(ctx) {
       let existing = null;
       if (id) {
         existing = getQuote(id);
-        const adminEditable = isAdmin(user) && ['pending', 'approved'].includes(existing.status);
+        const adminEditable = isAdmin(user);
         if (!EDITABLE.has(existing.status) && !adminEditable) bad(`This quotation is ${existing.status} and can no longer be changed. An administrator can reopen it.`);
       }
       const clientId = upsertClient(body.client || {});
