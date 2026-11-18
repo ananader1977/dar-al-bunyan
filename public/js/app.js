@@ -286,6 +286,7 @@ async function quoteForm(el, data) {
   await loadLookups();
   const lk = S.lk;
   const q = data?.quotation || {};
+  const preApproval = !q.id || ['draft', 'pending', 'rejected'].includes(q.status);
   const c = data?.client || {};
   const clientList = h('datalist', { id: 'dl-clients' }, lk.clients.map((x) => h('option', { value: x.name })));
   const productList = h('datalist', { id: 'dl-products' }, lk.products.map((p) => h('option', { value: p.name }, `${p.unit} · ${num2(p.price)}`)));
@@ -405,9 +406,9 @@ async function quoteForm(el, data) {
         h('div', { class: 'r int' }, h('span', {}, 'Cost (internal)'), sum.cost), h('div', { class: 'r int' }, h('span', {}, 'Profit'), sum.profit), sum.margin,
         err,
         h('div', { class: 'stack' },
-          isAdmin() ? h('button', { class: 'btn red block', onclick: () => save('approve') }, 'Save and approve') : h('button', { class: 'btn red block', onclick: () => save('submit') }, 'Save and submit for approval'),
-          isAdmin() ? h('button', { class: 'btn block', onclick: () => save('submit') }, 'Save and submit for approval') : null,
-          h('button', { class: 'btn alt block', onclick: () => save() }, 'Save as draft'),
+          preApproval ? (isAdmin() ? h('button', { class: 'btn red block', onclick: () => save('approve') }, 'Save and approve') : h('button', { class: 'btn red block', onclick: () => save('submit') }, 'Save and submit for approval')) : null,
+          preApproval && isAdmin() ? h('button', { class: 'btn block', onclick: () => save('submit') }, 'Save and submit for approval') : null,
+          h('button', { class: 'btn alt block', onclick: () => save() }, preApproval ? 'Save as draft' : 'Save changes'),
           h('button', { class: 'btn link', onclick: () => history.back() }, 'Cancel'))))));
   f.discount_pct.classList.add('num');
   f.discount_pct.style.width = '90px';
