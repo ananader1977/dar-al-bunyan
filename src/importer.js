@@ -202,7 +202,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
   const { db } = ctx, svc = ctx.service, s = ctx.settings();
   const users = db.prepare('SELECT id,name FROM users').all();
   const userByName = (n) => users.find((u) => u.name.trim().toLowerCase() === String(n || '').trim().toLowerCase())?.id || null;
-  const out = { kind: 'quotations', dry, rows: 0, created: 0, createdNumbered: 0, updated: 0, unchanged: 0, newClients: 0, generated: [], updates: [], invoicesFixed: [], invoiceNotes: [], warnings: [] };
+  const out = { kind: 'quotations', dry, rows: 0, created: 0, createdNumbered: 0, updated: 0, unchanged: 0, newClients: 0, generated: [], updates: [], invoicesFixed: [], markedPaid: 0, invoiceNotes: [], warnings: [] };
   const warn = (line, msg) => out.warnings.push(`Row ${line}: ${msg}`);
 
   // 1. read every row into a clean record
@@ -332,6 +332,15 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
         const q = find(r);
         if (!q) continue;
         const inv = invMismatch.get(q.id);
+        // Accepted jobs in the sheet count as paid by the customer (so the partners' profit share includes them); their issued invoice is marked paid too
+        const fresh_ = db.prepare('SELECT status, paid_at, quote_date, closed_at FROM quotations WHERE id=?').get(q.id);
+        if (fresh_.status === 'accepted' && !fresh_.paid_at) {
+          const paidOn = inv?.issue_date || fresh_.closed_at || fresh_.quote_date;
+          db.prepare('UPDATE quotations SET paid_at=?, updated_at=? WHERE id=?').run(paidOn, ctx.now(), q.id);
+          if (inv && inv.status === 'issued') db.prepare("UPDATE invoices SET status='paid', paid_at=?, payment_method='Bank transfer', payment_ref='Imported as paid' WHERE id=?").run(paidOn, inv.id);
+          ev(q.id, `marked as paid by the customer on ${paidOn}`);
+          out.markedPaid++;
+        }
         if (!inv) { if (r.invoice) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, but the app has no invoice for it. Nothing was created.`); continue; }
         if (r.invoice && r.invoice !== inv.number) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, the app has ${inv.number}. Left as in the app.`);
         if (same(inv.net, inv.qnet) && same(inv.vat, inv.qvat) && same(inv.total, inv.qtotal)) continue;

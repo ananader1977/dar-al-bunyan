@@ -420,12 +420,12 @@ function quotationPreview(r, data) {
   const apply = async () => {
     const res = await run(() => A('POST', '/import', { data }));
     if (!res) return;
-    modal(h('h2', {}, 'Quotations imported'), h('p', {}, `${res.created} added (${res.generated.length} with new numbers), ${res.updated} updated, ${res.unchanged} unchanged, ${res.invoicesFixed.length} invoice(s) corrected.`),
+    modal(h('h2', {}, 'Quotations imported'), h('p', {}, `${res.created} added (${res.generated.length} with new numbers), ${res.updated} updated, ${res.unchanged} unchanged, ${res.invoicesFixed.length} invoice(s) corrected, ${res.markedPaid} accepted job(s) marked as paid.`),
       h('p', {}, h('button', { class: 'btn', onclick: () => { closeModal(); location.hash = '#quotations'; } }, 'OK')));
   };
   modal(h('h2', {}, 'Quotations sheet: check before importing'),
     h('dl', { class: 'kv' }, h('dt', {}, 'New quotations'), h('dd', {}, `${r.created} (${r.generated.length} get a new number, ${r.createdNumbered} keep the number in the sheet)`), h('dt', {}, 'Updated'), h('dd', {}, r.updated), h('dt', {}, 'Unchanged'), h('dd', {}, r.unchanged),
-      h('dt', {}, 'Invoices to correct'), h('dd', {}, r.invoicesFixed.length), h('dt', {}, 'New customers'), h('dd', {}, r.newClients)),
+      h('dt', {}, 'Invoices to correct'), h('dd', {}, r.invoicesFixed.length), h('dt', {}, 'Accepted jobs marked as paid by the customer'), h('dd', {}, r.markedPaid), h('dt', {}, 'New customers'), h('dd', {}, r.newClients)),
     list('New numbers', r.generated.map((g) => `${g.number} · ${fmtDay(g.date)} · ${g.subject} · ${num2(g.net)}`)),
     list('Updated quotations', r.updates.map((u) => `${u.number} · ${chg(u.changes)}`)),
     list('Invoice amounts corrected', r.invoicesFixed.map((i) => `${i.invoice} (${i.status}) for ${i.quotation}: total ${num2(i.old.total)} → ${num2(i.new.total)}`)),
