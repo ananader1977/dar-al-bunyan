@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { loadConfig, validateConfig } from './config.js';
 import { createContext, createWebApp } from './app.js';
 
@@ -6,6 +7,12 @@ const problems = validateConfig(config);
 if (problems.length) {
   console.error('Configuration problems:\n - ' + problems.join('\n - '));
   process.exit(1);
+}
+// Test copy only: a live backup uploaded in Settings is swapped in here, before the database is opened.
+if (config.testMode && fs.existsSync(`${config.dbPath}.restore`)) {
+  for (const ext of ['', '-wal', '-shm']) fs.rmSync(config.dbPath + ext, { force: true });
+  fs.renameSync(`${config.dbPath}.restore`, config.dbPath);
+  console.log('[test] live data loaded from the uploaded backup');
 }
 const ctx = createContext({ config });
 const server = createWebApp(ctx).server();

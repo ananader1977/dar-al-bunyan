@@ -6,6 +6,7 @@ import { importExpensesReport, importQuotationsSheet, isQuotationSheet, readXlsx
 import { clampStr, isEmail } from './util.js';
 import { money, dateKey } from './time.js';
 import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 
 const pdfHeaders = (name, download) => ({ 'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${name.replace(/[^\w.-]/g, '_')}"` });
 
@@ -22,7 +23,7 @@ export function registerRoutes(app, ctx) {
   app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.get('/api/config', (req, res) => {
     const s = ctx.settings();
-    res.json({ company: s.company_name, tagline: s.company_tagline, payments: ctx.payments.name, email: !!config.smtp.host, storage: ctx.storage.kind });
+    res.json({ company: s.company_name, tagline: s.company_tagline, payments: ctx.payments.name, email: !!config.smtp.host, storage: ctx.storage.kind, testMode: config.testMode });
   });
   app.post('/api/login', async (req, res) => {
     limit(req, 'login', 10, 10 * 60 * 1000);
@@ -362,6 +363,25 @@ export function registerRoutes(app, ctx) {
   });
 
   app.get('/api/app/users', ...A, (req, res) => res.json({ rows: db.prepare('SELECT id,email,name,role,active,created_at FROM users ORDER BY role, name').all() }));
+  // Test copy only: replace this app's data with a backup downloaded from the live app (Settings -> Backups -> Download).
+  app.post('/api/app/test/load-data', ...A, async (req, res) => {
+    if (!config.testMode) throw new HttpError(404, 'Not found.');
+    const b = await req.json();
+    const buf = Buffer.from(String(b.data || ''), 'base64');
+    if (buf.length < 4096 || buf.subarray(0, 16).toString('latin1') !== 'SQLite format 3\0') throw new HttpError(400, 'Choose a backup file (.sqlite) downloaded from the live app.');
+    const tmp = `${config.dbPath}.restore`;
+    fs.writeFileSync(tmp, buf);
+    try {
+      const t = new DatabaseSync(tmp, { readOnly: true });
+      const ok = t.prepare("SELECT name FROM sqlite_master WHERE name IN ('quotations','invoices','users')").all().length === 3;
+      t.close();
+      if (!ok) throw new Error('not a Dar Al Bunyan backup');
+    } catch { fs.rmSync(tmp, { force: true }); throw new HttpError(400, 'This file is not a backup of the Dar Al Bunyan app.'); }
+    svc.audit(req.user, 'Live data loaded into the test environment', 'settings', null, `${buf.length} bytes`);
+    res.json({ ok: true });
+    setTimeout(() => (ctx.restart ? ctx.restart() : process.exit(0)), 600).unref(); // the host restarts the app; server.js swaps the data in at start-up
+  });
+
   app.post('/api/app/users', ...A, async (req, res) => {
     const b = await req.json();
     const email = String(b.email || '').trim().toLowerCase();

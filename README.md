@@ -139,3 +139,12 @@ Invoice emails will then include a **Pay online** button, and paid invoices are 
 - Connect Google Drive (above): a copy only on the server disk does not protect you if the server's disk is lost.
 - To restore, stop the service and replace the database file (`DB_PATH`) with a downloaded backup; or ask for help.
 - You can also download **Settings → Export all data to Excel** at any time.
+
+
+## Test environment
+
+A second copy of the app, `dar-al-bunyan-test`, runs from the **`staging`** branch with its own database and disk. It shows a red *TEST ENVIRONMENT* banner, **never sends emails** (they are only logged under Messages), uses the demo checkout and has no Google Drive.
+
+- **Set up once:** Render → New → Blueprint → this repository (it creates the test service from `render.yaml`), then set `BASE_URL` and `ADMIN1_PASSWORD` for it. (It needs the Starter plan for the disk, like the live app.)
+- **Copy of live data:** in the live app, Settings → Backups → Download the latest backup. In the test app, Settings → *Test environment* → *Load a live backup*. The test app restarts with that data; sign in with your live account. Repeat any time to refresh it.
+- **Work flow:** push new work to the `staging` branch, try it in the test app, then merge it into `main` to go live.

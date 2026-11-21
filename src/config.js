@@ -43,6 +43,8 @@ export function loadConfig(env = process.env) {
       refreshToken: (env.GOOGLE_REFRESH_TOKEN || '').trim(),
       folderId: (env.GOOGLE_DRIVE_FOLDER_ID || '').trim(), // optional: put all files in this folder
     },
+    // TEST_MODE=true marks a test copy of the app: red banner, no emails are ever sent, and live data can be loaded into it.
+    testMode: env.TEST_MODE === 'true',
     uploadDir: env.UPLOAD_DIR || '',
     disableRateLimit: env.DISABLE_RATE_LIMIT === 'true',
     trustProxy: env.TRUST_PROXY === 'true',

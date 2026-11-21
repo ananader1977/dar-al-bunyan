@@ -16,6 +16,7 @@ export function createNotifier(ctx) {
     if (!list.length) return { status: 'skipped' };
     const all = [...list, ...[].concat(cc || []).filter(Boolean)];
     const names = attachments.map((a) => a.filename).join(', ');
+    if (config.testMode) { log(all.join(', '), subject, text, 'logged', 'TEST environment: emails are never sent', names, ref); return { status: 'logged' }; }
     if (!config.smtp.host) { log(all.join(', '), subject, text, 'logged', 'Email not configured (SMTP_HOST)', names, ref); return { status: 'logged' }; }
     try {
       await sendMail({ ...config.smtp, from: config.smtp.from || config.smtp.user, to: all, subject, text, html, attachments });

@@ -60,6 +60,7 @@ async function boot() {
   S.cfg = await api('GET', '/api/config');
   await loadLookups();
   renderInstall();
+  if (S.cfg.testMode) { document.title = 'TEST · ' + document.title; if (!document.getElementById('testbar')) document.body.prepend(h('div', { id: 'testbar', style: 'background:#b00020;color:#fff;text-align:center;padding:6px 10px;font-weight:600;font-size:14px' }, 'TEST ENVIRONMENT: test data only. Emails are never sent. Nothing here affects the live app.')); }
   nav.replaceChildren(installSlot, h('span', { class: 'small muted' }, `${S.me.name} · ${S.me.role === 'admin' ? 'Owner' : 'Operations'}`),
     h('button', { class: 'btn alt sm', onclick: changePassword }, 'Password'),
     h('button', { class: 'btn alt sm', onclick: async () => { await api('POST', '/api/logout', {}); location.hash = ''; location.reload(); } }, 'Sign out'));

@@ -60,3 +60,43 @@ services:
         sync: false
       - key: PAYMENT_PROVIDER
         value: mock          # demo payments; switch to stripe + keys when going live
+
+  # ---- TEST copy of the app: same code, its own database and disk, never emails customers ----
+  # Deploys from the "staging" branch, so new work can be tried here before it is merged into main (live).
+  - type: web
+    name: dar-al-bunyan-test
+    runtime: node
+    plan: starter
+    branch: staging
+    buildCommand: "true"
+    startCommand: node --disable-warning=ExperimentalWarning src/server.js
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TEST_MODE
+        value: "true"        # red banner, emails are never sent, "Load a live backup" in Settings
+      - key: DB_PATH
+        value: /var/data/app.db
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: TRUST_PROXY
+        value: "true"
+      - key: BASE_URL
+        sync: false          # e.g. https://dar-al-bunyan-test.onrender.com
+      - key: ADMIN1_EMAIL
+        value: ananader1@gmail.com
+      - key: ADMIN1_NAME
+        value: Anas
+      - key: ADMIN1_PASSWORD
+        sync: false          # any password; after loading a live backup you sign in with your live account
+      - key: ADMIN2_EMAIL
+        value: test-admin2@example.com
+      - key: OPS_EMAIL
+        value: test-ops@example.com
+      - key: PAYMENT_PROVIDER
+        value: mock

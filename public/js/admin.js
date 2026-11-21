@@ -295,6 +295,17 @@ export const adminViews = {
           h('p', {}, h('button', { class: 'btn alt sm', onclick: async () => { const x = await run(() => A('POST', '/email-test', {})); if (x) toast(`Test email: ${x.status}`); } }, 'Send me a test email')))),
       h('div', { class: 'card' }, h('h2', {}, 'Data'), h('p', { class: 'small muted' }, 'Import the Zoho "Expenses_Report" Excel file (rows already imported are skipped), or a "Quotations" Excel export that you edited or extended: quotations with a matching Number are updated, new rows are added with new numbers, and invoice amounts are corrected. Quotations sheets show a preview first.'),
         h('p', { class: 'actions' }, file, h('button', { class: 'btn', onclick: () => file.click() }, 'Import Excel file'), h('a', { class: 'btn alt', href: '/api/app/export.xlsx' }, 'Export all data to Excel'))));
+    if (S.cfg?.testMode) {
+      const tf = h('input', { type: 'file', accept: '.sqlite,.db', class: 'hide', onchange: async () => {
+        const x = tf.files[0]; tf.value = '';
+        if (!x) return;
+        if (!confirm('Replace ALL data in this TEST app with this live backup? The app restarts and you sign in again with your live account.')) return;
+        const data = await fileToBase64(x);
+        if (await run(() => A('POST', '/test/load-data', { data }))) { toast('Loaded. The test app is restarting, reload in about a minute.', 8000); }
+      } });
+      el.append(h('div', { class: 'card' }, h('h2', {}, 'Test environment'), h('p', { class: 'small muted' }, 'In the live app go to Settings → Backups, download the latest backup, then load it here to test with a copy of the live data. Emails are never sent from this test app.'),
+        h('p', { class: 'actions' }, tf, h('button', { class: 'btn', onclick: () => tf.click() }, 'Load a live backup'))));
+    }
     await loadBackups();
   },
 
