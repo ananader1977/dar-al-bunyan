@@ -71,9 +71,14 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     assert.equal(db.prepare("SELECT COUNT(*) n FROM quotations WHERE status<>'accepted' AND paid_at IS NOT NULL").get().n, 0);
     assert.equal(db.prepare('SELECT status FROM invoices WHERE id=?').get(inv1).status, 'paid');
 
+    // accepted jobs without expenses get one approved Material expense = estimated cost
+    assert.equal(b.expensesAdded, 4);
+    assert.equal(db.prepare("SELECT SUM(total) s FROM expenses WHERE status='approved' AND cost_type='Material'").get().s, 1540);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM expenses e JOIN quotations q ON q.id=e.quotation_id WHERE q.status<>'accepted'").get().n, 0);
+
     // same file again: nothing is added twice
     const again = (await t.call('admin', 'POST', '/api/app/import', { data: file.toString('base64') })).body;
-    assert.equal(again.created, 0); assert.equal(again.markedPaid, 0); assert.equal(again.updated, 0); assert.equal(again.invoicesFixed.length, 0);
+    assert.equal(again.created, 0); assert.equal(again.markedPaid, 0); assert.equal(again.expensesAdded, 0); assert.equal(again.updated, 0); assert.equal(again.invoicesFixed.length, 0);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM quotations').get().n, 6);
 
     // exports carry the two new fields, and an export can be re-imported

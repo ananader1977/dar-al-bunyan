@@ -202,7 +202,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
   const { db } = ctx, svc = ctx.service, s = ctx.settings();
   const users = db.prepare('SELECT id,name FROM users').all();
   const userByName = (n) => users.find((u) => u.name.trim().toLowerCase() === String(n || '').trim().toLowerCase())?.id || null;
-  const out = { kind: 'quotations', dry, rows: 0, created: 0, createdNumbered: 0, updated: 0, unchanged: 0, newClients: 0, generated: [], updates: [], invoicesFixed: [], markedPaid: 0, invoiceNotes: [], warnings: [] };
+  const out = { kind: 'quotations', dry, rows: 0, created: 0, createdNumbered: 0, updated: 0, unchanged: 0, newClients: 0, generated: [], updates: [], invoicesFixed: [], markedPaid: 0, expensesAdded: 0, invoiceNotes: [], warnings: [] };
   const warn = (line, msg) => out.warnings.push(`Row ${line}: ${msg}`);
 
   // 1. read every row into a clean record
@@ -340,6 +340,14 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
           if (inv && inv.status === 'issued') db.prepare("UPDATE invoices SET status='paid', paid_at=?, payment_method='Bank transfer', payment_ref='Imported as paid' WHERE id=?").run(paidOn, inv.id);
           ev(q.id, `marked as paid by the customer on ${paidOn}`);
           out.markedPaid++;
+        }
+        // Costs in the finance report are expenses, not the quotation's estimate: an accepted job with no expenses at all gets one approved Material expense for its estimated cost
+        const qc = db.prepare('SELECT id, subject, quote_date, cost_total FROM quotations WHERE id=?').get(q.id);
+        if (fresh_.status === 'accepted' && qc.cost_total > 0 && !db.prepare('SELECT 1 FROM expenses WHERE quotation_id=?').get(q.id)) {
+          db.prepare("INSERT INTO expenses(paid_on,quotation_id,cost_type,description,amount,qty,total,paid_by,paid_back,remarks,status,created_by,created_at) VALUES(?,?,'Material',?,?,1,?,'Pending',0,'Estimated cost from the Excel import',?,?,?)")
+            .run(qc.quote_date, q.id, qc.subject, qc.cost_total, qc.cost_total, 'approved', user?.id || null, ctx.now());
+          ev(q.id, `material expense of ${qc.cost_total} added from the estimated cost`);
+          out.expensesAdded++;
         }
         if (!inv) { if (r.invoice) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, but the app has no invoice for it. Nothing was created.`); continue; }
         if (r.invoice && r.invoice !== inv.number) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, the app has ${inv.number}. Left as in the app.`);
