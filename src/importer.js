@@ -181,6 +181,14 @@ export function importExpensesReport(ctx, buf, user = null) {
 // as manual quotations and get the next free number. Amounts of an existing invoice are corrected to match its quotation.
 const QUOTE_RANK = { draft: 0, pending: 1, rejected: 1, approved: 2, sent: 3, accepted: 4, declined: 4 };
 const STATUS_WORDS = { draft: 'draft', 'waiting approval': 'sent', pending: 'pending', approved: 'approved', returned: 'rejected', rejected: 'rejected', sent: 'sent', accepted: 'accepted', declined: 'declined' };
+/** The "Manual Quotation" cell holds the number of the manual quotation (text, e.g. DABTS/118/25). Blank = leave as is; Yes / No only set the flag. */
+const manualCell = (v) => {
+  const t = String(v ?? '').trim();
+  if (!t) return { manual: null, manualNo: null };
+  if (/^(yes|y|true|1|manual)$/i.test(t)) return { manual: true, manualNo: null };
+  if (/^(no|n|false|0)$/i.test(t)) return { manual: false, manualNo: null };
+  return { manual: true, manualNo: t };
+};
 const yes = (v) => /^(yes|y|true|1|manual)$/i.test(String(v ?? '').trim());
 const same = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
 class DryRun extends Error {}
@@ -226,7 +234,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
       number: numRaw ? (/^\d+$/.test(numRaw) ? `${s.quote_prefix}${numRaw}` : numRaw) : '', customer: String(at(r, C.customer) || '').trim(),
       subject: String(at(r, C.subject) || '').trim(), site: String(at(r, C.site) || '').trim(), lpo: typeof lpoRaw === 'number' ? String(Math.round(lpoRaw)) : String(lpoRaw || '').trim(),
       invoice: String(at(r, C.invoice) || '').trim(), creator: userByName(at(r, C.createdBy)) || user?.id || null,
-      manual: C.manual >= 0 && String(at(r, C.manual)).trim() !== '' ? yes(at(r, C.manual)) : null, remarks: String(at(r, C.remarks) || '').trim(),
+      ...manualCell(at(r, C.manual)), remarks: String(at(r, C.remarks) || '').trim(),
     });
   });
   const seen = new Map();
@@ -258,7 +266,8 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
     diff('quote_date', 'date', q.quote_date, r.date);
     if (r.lpo) diff('lpo', 'LPO', q.lpo, r.lpo);
     if (r.remarks) diff('remarks', 'remarks', q.remarks, r.remarks);
-    if (r.manual !== null) diff('manual_quotation', 'manual quotation', q.manual_quotation ? 'Yes' : 'No', r.manual ? 'Yes' : 'No', !!q.manual_quotation === r.manual), set.manual_quotation = r.manual ? 1 : 0;
+    if (r.manualNo !== null) { diff('manual_no', 'manual quotation no.', q.manual_no || '-', r.manualNo, q.manual_no === r.manualNo); set.manual_quotation = 1; }
+    else if (r.manual !== null) diff('manual_quotation', 'manual quotation', q.manual_quotation ? 'Yes' : 'No', r.manual ? 'Yes' : 'No', !!q.manual_quotation === r.manual), set.manual_quotation = r.manual ? 1 : 0;
     if (r.status && r.status !== q.status) {
       const closing = r.status === 'accepted' || r.status === 'declined';
       if (closing || QUOTE_RANK[r.status] > QUOTE_RANK[q.status]) { ch.status = [q.status, r.status]; set.status = r.status; if (closing && !q.closed_at) set.closed_at = r.date; if (r.status === 'pending' && !q.submitted_at) set.submitted_at = ctx.now(); }
@@ -290,10 +299,10 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
     if (!r.subject) warn(r.line, `no Subject: used "${subject}".`);
     const st = r.status || 'draft';
     const closing = st === 'accepted' || st === 'declined';
-    const manual = r.manual !== null ? r.manual : !r.number;
-    const qid = Number(db.prepare(`INSERT INTO quotations(number,client_id,subject,site,quote_date,valid_until,status,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,remarks,created_by,submitted_at,closed_at,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,0,?,?,0,?,?,?,?,?,?,'',?,?,?,?,?,?,?)`).run(number, cid, subject, r.site, r.date, addDaysIso(r.date, Number(s.quote_validity_days) || 30), st, r.vatRate, t.subtotal, t.net, t.vat, t.total, t.cost_total,
-      r.lpo, s.quote_terms, manual ? 1 : 0, r.remarks, r.creator, st === 'pending' ? ctx.now() : null, closing ? r.date : null, ctx.now(), ctx.now()).lastInsertRowid);
+    const manual = r.manualNo ? true : r.manual !== null ? r.manual : !r.number;
+    const qid = Number(db.prepare(`INSERT INTO quotations(number,client_id,subject,site,quote_date,valid_until,status,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,manual_no,remarks,created_by,submitted_at,closed_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,0,?,?,0,?,?,?,?,?,?,'',?,?,?,?,?,?,?,?)`).run(number, cid, subject, r.site, r.date, addDaysIso(r.date, Number(s.quote_validity_days) || 30), st, r.vatRate, t.subtotal, t.net, t.vat, t.total, t.cost_total,
+      r.lpo, s.quote_terms, manual ? 1 : 0, r.manualNo || '', r.remarks, r.creator, st === 'pending' ? ctx.now() : null, closing ? r.date : null, ctx.now(), ctx.now()).lastInsertRowid);
     setLines(qid, subject, t.net, t.cost_total);
     ev(qid, `${manual ? 'manual quotation ' : ''}added from the Excel sheet (row ${r.line}), status ${st}`);
     out.created++;

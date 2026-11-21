@@ -14,7 +14,7 @@ A simple web app for Dar Al Bunyan Technical Services L.L.C. It replaces Zoho Cr
 - **Trash and activity log (owner):** deleted records can be restored for 30 days; every important action is logged with who and when.
 - **Automatic daily backups:** to Google Drive (when connected) and the server disk; "Back up now" and downloads under Settings.
 - **Weekly reminder email:** every Monday 8:00 (Dubai) to everyone: approvals waiting, quotations without an answer, jobs not invoiced, overdue invoices and partner balances.
-- **Manual quotations:** every quotation has a **Manual quotation** tick (made on paper or outside the app, entered afterwards) and internal **Remarks**. Both are in the Excel exports.
+- **Manual quotations:** every quotation has a **Manual quotation** number (text, e.g. `DABTS/118/25`, for quotations made on paper or outside the app) and internal **Remarks**. Both are in the Excel exports, and a number typed in the sheet's *Manual Quotation* column is imported.
 - **Quotations sheet import:** Settings → Import Excel file also accepts a *Quotations* export that you edited or extended. It shows a preview first; rows whose **Number** exists update that quotation, new rows are added with the next free numbers (marked as manual quotations), and amounts of the quotation's invoice are corrected to match. Command line: `npm run import-quotations -- file.xlsx` (preview) or with `--apply`.
 - **Excel export on every page**, following the filters you set on that page.
 - **Attachments in Google Drive:** LPOs, receipts, photos and drawings on quotations, invoices and expenses (📎 button, or paste a Drive link).

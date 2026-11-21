@@ -26,10 +26,10 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
 
     const file = sheet([
       row({ number: n1, date: day(7, 1), customer: 'RTA', subject: 'Pump A', site: 'Depot', net: 1200, cost: 500, lpo: 202600001, invoice: inv1No }), // amounts changed -> invoice must follow
-      row({ number: n2, date: day(7, 1), customer: 'RTA', subject: 'Pump B', site: 'Depot', net: 2000, cost: 800 }),                              // identical -> unchanged
+      row({ number: n2, date: day(7, 1), customer: 'RTA', subject: 'Pump B', site: 'Depot', net: 2000, cost: 800, manual: 'DABTS/7/25' }),            // only the manual number is new
       row({ number: 'DABTS/50', date: day(8, 1), customer: 'Seddiqi', subject: 'Old paper quote', site: 'Reem', net: 500, cost: 200 }),            // new number kept
       row({ date: day(10, 5), subject: '2hp pump', site: 'RTA bus depot', status: 'Waiting approval', net: 700, cost: 250 }),                     // manual, later date
-      row({ date: day(9, 1), subject: '7.5 kw pump', site: 'Dp world', status: 'Declined', net: 1500, cost: 700, remarks: 'client went elsewhere' }), // manual, earlier date
+      row({ date: day(9, 1), subject: '7.5 kw pump', site: 'Dp world', status: 'Declined', net: 1500, cost: 700, manual: 'DABTS/118/25', remarks: 'client went elsewhere' }), // manual, earlier date
       row({ date: day(9, 2), subject: '', site: 'Meydan grand stand', net: 100, cost: 40 }),                                                       // no subject
       row({ number: 'DABTS/60', date: 'bad', net: 5 }),                                                                                            // invalid date
     ]);
@@ -37,7 +37,7 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     // dry run changes nothing but reports everything
     const before = JSON.stringify(db.prepare('SELECT * FROM quotations ORDER BY id').all()) + db.prepare("SELECT value FROM settings WHERE key='next_quote_no'").get().value;
     const dry = (await import('../src/importer.js')).importQuotationsSheet(ctx, file, admin, { dry: true });
-    assert.equal(dry.created, 4); assert.equal(dry.updated, 1); assert.equal(dry.unchanged, 1);
+    assert.equal(dry.created, 4); assert.equal(dry.updated, 2); assert.equal(dry.unchanged, 0);
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM quotations ORDER BY id').all()) + db.prepare("SELECT value FROM settings WHERE key='next_quote_no'").get().value, before, 'dry run leaves no trace');
 
     await t.login('admin');
@@ -45,12 +45,12 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const b = res.body;
     assert.equal(b.kind, 'quotations');
-    assert.equal(b.created, 4); assert.equal(b.createdNumbered, 1); assert.equal(b.updated, 1); assert.equal(b.unchanged, 1);
+    assert.equal(b.created, 4); assert.equal(b.createdNumbered, 1); assert.equal(b.updated, 2); assert.equal(b.unchanged, 0);
     assert.ok(b.warnings.some((w) => /valid Date/.test(w)));
     // generated numbers continue from the counter, oldest date first
     assert.deepEqual(b.generated.map((g) => [g.number, g.subject]), [['DABTS/3', '7.5 kw pump'], ['DABTS/4', 'Job - Meydan grand stand'], ['DABTS/5', '2hp pump']]);
     const get = (no) => db.prepare('SELECT q.*, c.name client FROM quotations q JOIN clients c ON c.id=q.client_id WHERE number=?').get(no);
-    assert.equal(get('DABTS/3').manual_quotation, 1); assert.equal(get('DABTS/3').status, 'declined'); assert.equal(get('DABTS/3').remarks, 'client went elsewhere'); assert.equal(get('DABTS/3').client, 'Unassigned');
+    assert.equal(get('DABTS/3').manual_quotation, 1); assert.equal(get('DABTS/3').manual_no, 'DABTS/118/25'); assert.equal(get('DABTS/4').manual_no, ''); assert.equal(get('DABTS/4').manual_quotation, 1); assert.equal(get(n2).manual_no, 'DABTS/7/25'); assert.equal(get(n2).manual_quotation, 1); assert.equal(get('DABTS/3').status, 'declined'); assert.equal(get('DABTS/3').remarks, 'client went elsewhere'); assert.equal(get('DABTS/3').client, 'Unassigned');
     assert.equal(get('DABTS/5').status, 'sent'); assert.equal(get('DABTS/5').client, 'RTA');
     assert.equal(get('DABTS/50').manual_quotation, 0); assert.equal(get('DABTS/50').client, 'Seddiqi');
     assert.equal(Number(db.prepare("SELECT value FROM settings WHERE key='next_quote_no'").get().value), 51, 'counter moved past the highest number');
@@ -86,7 +86,7 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     const { readXlsx } = await import('../src/importer.js');
     const rows = readXlsx(Buffer.from(await ex.arrayBuffer()));
     assert.deepEqual(rows[0].slice(-2), ['Manual Quotation', 'Remarks']);
-    assert.ok(rows.some((x) => x[0] === 'DABTS/3' && x.at(-2) === 'Yes' && x.at(-1) === 'client went elsewhere'));
+    assert.ok(rows.some((x) => x[0] === 'DABTS/3' && x.at(-2) === 'DABTS/118/25' && x.at(-1) === 'client went elsewhere'));
   } finally { await t.close(); }
 });
 
@@ -94,11 +94,11 @@ test('quotation form saves Manual Quotation and Remarks', async () => {
   const t = await startTestApp();
   try {
     await t.login('admin');
-    const body = t.quote({ manual_quotation: true, remarks: 'paper copy signed on site' });
+    const body = t.quote({ manual_no: 'DABTS/118/25', remarks: 'paper copy signed on site' });
     const id = (await t.call('admin', 'POST', '/api/app/quotations', body)).body.quotation.id;
     const d = (await t.call('admin', 'GET', `/api/app/quotations/${id}`)).body.quotation;
-    assert.equal(d.manual_quotation, 1); assert.equal(d.remarks, 'paper copy signed on site');
+    assert.equal(d.manual_quotation, 1); assert.equal(d.manual_no, 'DABTS/118/25'); assert.equal(d.remarks, 'paper copy signed on site');
     await t.call('admin', 'PUT', `/api/app/quotations/${id}`, t.quote({ subject: 'Edited' })); // fields omitted: kept
-    assert.equal((await t.call('admin', 'GET', `/api/app/quotations/${id}`)).body.quotation.remarks, 'paper copy signed on site');
+    const kept = (await t.call('admin', 'GET', `/api/app/quotations/${id}`)).body.quotation; assert.equal(kept.remarks, 'paper copy signed on site'); assert.equal(kept.manual_no, 'DABTS/118/25');
   } finally { await t.close(); }
 });

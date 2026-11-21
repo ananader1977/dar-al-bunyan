@@ -341,6 +341,7 @@ const flag = (db, key) => { if (db.prepare('SELECT 1 FROM settings WHERE key=?')
 function migrate(db) {
   addCol(db, 'quotations', 'paid_at', 'TEXT'); // date the customer paid (set by the invoice, or by hand for jobs without one)
   addCol(db, 'quotations', 'manual_quotation', 'INTEGER NOT NULL DEFAULT 0'); // 1 = quotation was made manually (outside the app) and entered afterwards
+  addCol(db, 'quotations', 'manual_no', "TEXT NOT NULL DEFAULT ''"); // the number of the manual quotation, e.g. DABTS/118/25
   addCol(db, 'quotations', 'remarks', "TEXT NOT NULL DEFAULT ''"); // internal remarks, never printed
   addCol(db, 'expenses', 'status', "TEXT NOT NULL DEFAULT 'approved'"); // pending / approved / returned
   addCol(db, 'expenses', 'review_note', "TEXT NOT NULL DEFAULT ''");
