@@ -55,12 +55,23 @@ function cardify() {
 new MutationObserver(cardify).observe(app, { childList: true, subtree: true });
 boot();
 
+// Test copy only: a red bar that stays at the top of every screen, including the sign-in page.
+async function testBanner() {
+  try {
+    const c = await api('GET', '/api/config');
+    if (!c.testMode || document.getElementById('testbar')) return;
+    document.title = 'TEST · ' + document.title;
+    document.head.append(h('style', {}, '.top{top:36px !important}'));
+    document.body.prepend(h('div', { id: 'testbar', style: 'position:sticky;top:0;z-index:1000;background:#c00000;color:#fff;text-align:center;height:20px;line-height:20px;padding:8px 10px;font-weight:700;font-size:14px' }, 'TEST ENVIRONMENT: test data only. Emails are never sent. Nothing here affects the live app.'));
+  } catch { /* offline: the normal screens explain it */ }
+}
+
 async function boot() {
+  await testBanner();
   try { S.me = (await api('GET', '/api/me')).user; } catch (e) { return e.status === 0 ? offlineView() : loginView(); }
   S.cfg = await api('GET', '/api/config');
   await loadLookups();
   renderInstall();
-  if (S.cfg.testMode) { document.title = 'TEST · ' + document.title; if (!document.getElementById('testbar')) document.body.prepend(h('div', { id: 'testbar', style: 'background:#b00020;color:#fff;text-align:center;padding:6px 10px;font-weight:600;font-size:14px' }, 'TEST ENVIRONMENT: test data only. Emails are never sent. Nothing here affects the live app.')); }
   nav.replaceChildren(installSlot, h('span', { class: 'small muted' }, `${S.me.name} · ${S.me.role === 'admin' ? 'Owner' : 'Operations'}`),
     h('button', { class: 'btn alt sm', onclick: changePassword }, 'Password'),
     h('button', { class: 'btn alt sm', onclick: async () => { await api('POST', '/api/logout', {}); location.hash = ''; location.reload(); } }, 'Sign out'));
