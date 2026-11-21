@@ -204,7 +204,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
   const head = rows[0].map((h) => String(h).trim().toLowerCase());
   const col = (...names) => { for (const n of names) { const i = head.indexOf(n.toLowerCase()); if (i >= 0) return i; } return -1; };
   const C = { number: col('Number'), date: col('Date'), customer: col('Customer'), subject: col('Subject'), site: col('Site'), status: col('Status'), net: col('Net (excl. VAT)'),
-    vat: col('VAT'), total: col('Total'), cost: col('Estimated cost'), lpo: col('LPO'), invoice: col('Invoice'), createdBy: col('Created by'), manual: col('Manual Quotation'), remarks: col('Remarks') };
+    vat: col('VAT'), total: col('Total'), cost: col('Estimated cost'), lpo: col('LPO'), po: col('PO'), invoice: col('Invoice'), createdBy: col('Created by'), manual: col('Manual Quotation'), remarks: col('Remarks') };
   if (C.date < 0 || C.net < 0) throw new HttpError(400, 'The "Date" and "Net (excl. VAT)" columns are required.');
   const at = (r, i) => (i >= 0 ? r[i] : '');
   const { db } = ctx, svc = ctx.service, s = ctx.settings();
@@ -233,6 +233,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
       line, date, net, vatRate: vatRate >= 0 && vatRate <= 100 ? vatRate : Number(s.vat_rate) || 5, cost: round2(numOf(at(r, C.cost))), status: STATUS_WORDS[stRaw] || null,
       number: numRaw ? (/^\d+$/.test(numRaw) ? `${s.quote_prefix}${numRaw}` : numRaw) : '', customer: String(at(r, C.customer) || '').trim(),
       subject: String(at(r, C.subject) || '').trim(), site: String(at(r, C.site) || '').trim(), lpo: typeof lpoRaw === 'number' ? String(Math.round(lpoRaw)) : String(lpoRaw || '').trim(),
+      po: (() => { const v = C.po >= 0 ? at(r, C.po) : lpoRaw; const t = typeof v === 'number' ? String(Math.round(v)) : String(v || '').trim(); return /pending/i.test(t) ? '' : t; })(),
       invoice: String(at(r, C.invoice) || '').trim(), creator: userByName(at(r, C.createdBy)) || user?.id || null,
       ...manualCell(at(r, C.manual)), remarks: String(at(r, C.remarks) || '').trim(),
     });
@@ -265,6 +266,7 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
     if (r.site) diff('site', 'site', q.site, r.site);
     diff('quote_date', 'date', q.quote_date, r.date);
     if (r.lpo) diff('lpo', 'LPO', q.lpo, r.lpo);
+    if (r.po) diff('po_no', 'PO', q.po_no, r.po);
     if (r.remarks) diff('remarks', 'remarks', q.remarks, r.remarks);
     if (r.manualNo !== null) { diff('manual_no', 'manual quotation no.', q.manual_no || '-', r.manualNo, q.manual_no === r.manualNo); set.manual_quotation = 1; }
     else if (r.manual !== null) diff('manual_quotation', 'manual quotation', q.manual_quotation ? 'Yes' : 'No', r.manual ? 'Yes' : 'No', !!q.manual_quotation === r.manual), set.manual_quotation = r.manual ? 1 : 0;
@@ -300,9 +302,9 @@ export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {
     const st = r.status || 'draft';
     const closing = st === 'accepted' || st === 'declined';
     const manual = r.manualNo ? true : r.manual !== null ? r.manual : !r.number;
-    const qid = Number(db.prepare(`INSERT INTO quotations(number,client_id,subject,site,quote_date,valid_until,status,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,manual_no,remarks,created_by,submitted_at,closed_at,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,0,?,?,0,?,?,?,?,?,?,'',?,?,?,?,?,?,?,?)`).run(number, cid, subject, r.site, r.date, addDaysIso(r.date, Number(s.quote_validity_days) || 30), st, r.vatRate, t.subtotal, t.net, t.vat, t.total, t.cost_total,
-      r.lpo, s.quote_terms, manual ? 1 : 0, r.manualNo || '', r.remarks, r.creator, st === 'pending' ? ctx.now() : null, closing ? r.date : null, ctx.now(), ctx.now()).lastInsertRowid);
+    const qid = Number(db.prepare(`INSERT INTO quotations(number,client_id,subject,site,quote_date,valid_until,status,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,manual_no,po_no,remarks,created_by,submitted_at,closed_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,0,?,?,0,?,?,?,?,?,?,'',?,?,?,?,?,?,?,?,?)`).run(number, cid, subject, r.site, r.date, addDaysIso(r.date, Number(s.quote_validity_days) || 30), st, r.vatRate, t.subtotal, t.net, t.vat, t.total, t.cost_total,
+      r.lpo, s.quote_terms, manual ? 1 : 0, r.manualNo || '', r.po || '', r.remarks, r.creator, st === 'pending' ? ctx.now() : null, closing ? r.date : null, ctx.now(), ctx.now()).lastInsertRowid);
     setLines(qid, subject, t.net, t.cost_total);
     ev(qid, `${manual ? 'manual quotation ' : ''}added from the Excel sheet (row ${r.line}), status ${st}`);
     out.created++;

@@ -192,14 +192,14 @@ export function createService(ctx) {
     return { quotation: q, lines, client, events, invoice, actualCost: actual?.s ?? null, expenseCount: actual?.n ?? null, attachments: listAttachments('quotation', q.id) };
   }
   function listQuotes({ status, q: term, mine, user } = {}) {
-    let sql = `SELECT q.id,q.number,q.subject,q.site,q.quote_date,q.status,q.net,q.total,q.cost_total,q.created_by,q.updated_at,q.lpo,q.manual_quotation,q.manual_no,q.remarks,c.name client_name,u.name created_by_name,
+    let sql = `SELECT q.id,q.number,q.subject,q.site,q.quote_date,q.status,q.net,q.total,q.cost_total,q.created_by,q.updated_at,q.lpo,q.manual_quotation,q.manual_no,q.po_no,q.remarks,c.name client_name,u.name created_by_name,
       (SELECT number FROM invoices i WHERE i.quotation_id=q.id AND i.status<>'cancelled') invoice_number,
       (SELECT COUNT(*) FROM attachments a WHERE a.entity='quotation' AND a.entity_id=q.id) attach_count
       FROM quotations q JOIN clients c ON c.id=q.client_id LEFT JOIN users u ON u.id=q.created_by WHERE 1=1`;
     const p = [];
     if (status && STATUSES.includes(status)) { sql += ' AND q.status=?'; p.push(status); }
     if (mine && user) { sql += ' AND q.created_by=?'; p.push(user.id); }
-    if (term) { sql += ' AND (q.number LIKE ? OR q.subject LIKE ? OR c.name LIKE ? OR q.lpo LIKE ? OR q.manual_no LIKE ?)'; const t = `%${String(term).slice(0, 60)}%`; p.push(t, t, t, t, t); }
+    if (term) { sql += ' AND (q.number LIKE ? OR q.subject LIKE ? OR c.name LIKE ? OR q.lpo LIKE ? OR q.manual_no LIKE ? OR q.po_no LIKE ?)'; const t = `%${String(term).slice(0, 60)}%`; p.push(t, t, t, t, t, t); }
     sql += ' ORDER BY q.quote_date DESC, q.id DESC LIMIT 1000';
     return db.prepare(sql).all(...p);
   }
@@ -256,10 +256,11 @@ export function createService(ctx) {
       const f = [clientId, subject, clampStr(body.site, 200), qDate, valid, discountPct, vatRate, t.subtotal, t.discount, t.net, t.vat, t.total, t.cost_total,
         clampStr(body.lpo, 120), clampStr(body.terms ?? s.quote_terms, 4000), clampStr(body.notes, 4000),
         manualNo ? 1 : (existing?.manual_quotation ?? 0), manualNo,
+        body.po_no === undefined ? (existing?.po_no ?? '') : clampStr(body.po_no, 120),
         body.remarks === undefined ? (existing?.remarks ?? '') : clampStr(body.remarks, 4000)];
       let qid;
       if (existing) {
-        db.prepare(`UPDATE quotations SET client_id=?,subject=?,site=?,quote_date=?,valid_until=?,discount_pct=?,vat_rate=?,subtotal=?,discount=?,net=?,vat=?,total=?,cost_total=?,lpo=?,terms=?,notes=?,manual_quotation=?,manual_no=?,remarks=?,updated_at=? WHERE id=?`).run(...f, ctx.now(), existing.id);
+        db.prepare(`UPDATE quotations SET client_id=?,subject=?,site=?,quote_date=?,valid_until=?,discount_pct=?,vat_rate=?,subtotal=?,discount=?,net=?,vat=?,total=?,cost_total=?,lpo=?,terms=?,notes=?,manual_quotation=?,manual_no=?,po_no=?,remarks=?,updated_at=? WHERE id=?`).run(...f, ctx.now(), existing.id);
         qid = existing.id;
         db.prepare('DELETE FROM quote_lines WHERE quotation_id=?').run(qid);
         event(qid, user, 'edited');
@@ -269,8 +270,8 @@ export function createService(ctx) {
         let k = n;
         while (db.prepare('SELECT 1 FROM quotations WHERE number=?').get(number)) number = `${s.quote_prefix}${++k}`;
         setSetting('next_quote_no', k + 1);
-        qid = Number(db.prepare(`INSERT INTO quotations(client_id,subject,site,quote_date,valid_until,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,manual_no,remarks,number,status,created_by,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?)`).run(...f, number, user.id, ctx.now(), ctx.now()).lastInsertRowid);
+        qid = Number(db.prepare(`INSERT INTO quotations(client_id,subject,site,quote_date,valid_until,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,manual_no,po_no,remarks,number,status,created_by,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?)`).run(...f, number, user.id, ctx.now(), ctx.now()).lastInsertRowid);
         event(qid, user, 'created');
       }
       const ins = db.prepare('INSERT INTO quote_lines(quotation_id,pos,product_id,description,qty,unit,unit_price,unit_cost,amount,cost) VALUES(?,?,?,?,?,?,?,?,?,?)');

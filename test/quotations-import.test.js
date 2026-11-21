@@ -56,7 +56,7 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     assert.equal(Number(db.prepare("SELECT value FROM settings WHERE key='next_quote_no'").get().value), 51, 'counter moved past the highest number');
     // updated quotation + its lines + its invoice
     const u = get(n1);
-    assert.equal(u.net, 1200); assert.equal(u.total, 1260); assert.equal(u.cost_total, 500); assert.equal(u.lpo, '202600001'); assert.equal(u.manual_quotation, 0);
+    assert.equal(u.net, 1200); assert.equal(u.total, 1260); assert.equal(u.cost_total, 500); assert.equal(u.lpo, '202600001'); assert.equal(u.manual_quotation, 0); assert.equal(u.po_no, '202600001');
     assert.equal(db.prepare('SELECT COUNT(*) n FROM quote_lines WHERE quotation_id=?').get(u.id).n, 1, 'two lines collapsed into one');
     assert.match(db.prepare("SELECT note FROM quote_events WHERE quotation_id=? AND action='imported from Excel'").get(u.id).note, /previous lines/);
     const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(inv1);
@@ -85,8 +85,8 @@ test('quotations sheet: update by Number, add new ones with generated numbers, f
     const ex = await t.call('admin', 'GET', '/api/app/export/quotations.xlsx', undefined, { raw: true });
     const { readXlsx } = await import('../src/importer.js');
     const rows = readXlsx(Buffer.from(await ex.arrayBuffer()));
-    assert.deepEqual(rows[0].slice(-2), ['Manual Quotation', 'Remarks']);
-    assert.ok(rows.some((x) => x[0] === 'DABTS/3' && x.at(-2) === 'DABTS/118/25' && x.at(-1) === 'client went elsewhere'));
+    assert.deepEqual(rows[0].slice(-3), ['Manual Quotation', 'PO', 'Remarks']);
+    assert.ok(rows.some((x) => x[0] === 'DABTS/3' && x.at(-3) === 'DABTS/118/25' && x.at(-1) === 'client went elsewhere'));
   } finally { await t.close(); }
 });
 

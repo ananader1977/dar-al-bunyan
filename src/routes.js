@@ -246,7 +246,7 @@ export function registerRoutes(app, ctx) {
     { header: 'Total', key: 'total', type: 'money' }, { header: 'Estimated cost', key: 'cost_total', type: 'money' }, { header: 'Profit', value: (r) => Math.round((r.net - r.cost_total) * 100) / 100, type: 'money' },
     { header: 'Margin %', value: (r) => (r.net ? Math.round(((r.net - r.cost_total) / r.net) * 1000) / 10 : 0), type: 'number', width: 10 },
     { header: 'LPO', key: 'lpo', width: 16 }, { header: 'Invoice', key: 'invoice_number', width: 14 }, { header: 'Attachments', key: 'attach_count', type: 'number', width: 11 }, { header: 'Created by', key: 'created_by_name', width: 16 },
-    { header: 'Manual Quotation', key: 'manual_no', width: 18 }, { header: 'Remarks', key: 'remarks', width: 40 }];
+    { header: 'Manual Quotation', key: 'manual_no', width: 18 }, { header: 'PO', key: 'po_no', width: 16 }, { header: 'Remarks', key: 'remarks', width: 40 }];
   app.get('/api/app/export/quotations.xlsx', U, (req, res) => {
     const rows = svc.listQuotes({ status: req.query.status, q: req.query.q, user: req.user });
     const ids = rows.map((r) => r.id);
@@ -335,7 +335,7 @@ export function registerRoutes(app, ctx) {
         { header: 'Number', key: 'number', width: 14 }, { header: 'Date', key: 'quote_date', width: 12 }, { header: 'Customer', key: 'client_name', width: 24 }, { header: 'Subject', key: 'subject', width: 48 },
         { header: 'Status', key: 'status' }, { header: 'Net (excl. VAT)', key: 'net', type: 'money' }, { header: 'VAT', key: 'vat', type: 'money' }, { header: 'Total', key: 'total', type: 'money' },
         { header: 'Estimated cost', key: 'cost_total', type: 'money' }, { header: 'LPO', key: 'lpo' }, { header: 'Created by', key: 'created_by_name' },
-        { header: 'Manual Quotation', key: 'manual_no', width: 18 }, { header: 'Remarks', key: 'remarks', width: 40 }], rows: quotes },
+        { header: 'Manual Quotation', key: 'manual_no', width: 18 }, { header: 'PO', key: 'po_no', width: 16 }, { header: 'Remarks', key: 'remarks', width: 40 }], rows: quotes },
       { name: 'Invoices', columns: [{ header: 'Number', key: 'number' }, { header: 'Date', key: 'issue_date' }, { header: 'Due', key: 'due_date' }, { header: 'Customer', key: 'client_name', width: 24 }, { header: 'Subject', key: 'subject', width: 48 }, { header: 'Net', key: 'net', type: 'money' }, { header: 'VAT', key: 'vat', type: 'money' }, { header: 'Total', key: 'total', type: 'money' }, { header: 'Status', key: 'status' }, { header: 'Paid on', key: 'paid_at' }],
         rows: db.prepare('SELECT i.*, c.name client_name FROM invoices i JOIN clients c ON c.id=i.client_id ORDER BY issue_date DESC').all() },
       { name: 'Profit by month', columns: [{ header: 'Month', key: 'month' }, { header: 'Revenue', key: 'revenue', type: 'money' }, { header: 'Costs', key: 'cost', type: 'money' }, { header: 'Profit earned', key: 'profit', type: 'money' }, { header: 'Profit payable', key: 'payable', type: 'money' }, { header: `${s.partner_a} ${s.partner_a_share}%`, key: 'a', type: 'money' }, { header: `${s.partner_b} ${s.partner_b_share}%`, key: 'bGross', type: 'money' }],

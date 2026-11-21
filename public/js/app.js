@@ -310,6 +310,7 @@ async function quoteForm(el, data) {
     quote_date: inp('quote_date', q.quote_date || todayIso(), { type: 'date' }),
     valid_until: inp('valid_until', q.valid_until, { type: 'date' }),
     lpo: inp('lpo', q.lpo),
+    po_no: inp('po_no', q.po_no, { maxlength: 120 }),
     discount_pct: inp('discount_pct', q.discount_pct ?? 0, { type: 'number', min: 0, max: 100, step: '0.01' }),
     terms: h('textarea', { name: 'terms', value: q.terms ?? lk.settings.quote_terms, rows: 5 }),
     notes: h('textarea', { name: 'notes', value: q.notes || '', rows: 3, placeholder: 'Internal notes are printed on the quotation too; keep them customer friendly.' }),
@@ -372,7 +373,7 @@ async function quoteForm(el, data) {
     err.classList.add('hide');
     const body = {
       client: { id: clientId, name: cf.name.value, contact: cf.contact.value, email: cf.email.value, phone: cf.phone.value, address: cf.address.value, trn: cf.trn.value },
-      subject: f.subject.value, site: f.site.value, quote_date: f.quote_date.value, valid_until: f.valid_until.value, lpo: f.lpo.value,
+      subject: f.subject.value, site: f.site.value, quote_date: f.quote_date.value, valid_until: f.valid_until.value, lpo: f.lpo.value, po_no: f.po_no.value,
       discount_pct: f.discount_pct.value, terms: f.terms.value, notes: f.notes.value, manual_no: f.manual_no.value, remarks: f.remarks.value,
       lines: rows.map((r) => ({ product_id: r.product_id, description: r.desc.value, qty: r.qty.value, unit: r.unit.value, unit_price: r.price.value, unit_cost: r.cost.value })),
     };
@@ -395,7 +396,7 @@ async function quoteForm(el, data) {
           h('div', { class: 'grid2' }, field('Contact person', cf.contact), field('Email (for sending)', cf.email), field('Phone', cf.phone), field('TRN', cf.trn)), field('Address', cf.address)),
         h('div', { class: 'card' }, h('h2', {}, 'Quotation details'), field('Subject *', f.subject),
           h('div', { class: 'grid3' }, field('Site / location', f.site), field('Quotation date', f.quote_date), field('Valid until', f.valid_until, 'Empty = date + validity days'), field('Client LPO / reference', f.lpo)),
-          field('Manual quotation no. (if it was made on paper or outside the app)', f.manual_no), field('Remarks (internal, not printed)', f.remarks)),
+          field('Manual quotation no. (if it was made on paper or outside the app)', f.manual_no), field('PO number', f.po_no), field('Remarks (internal, not printed)', f.remarks)),
         h('div', { class: 'card' }, h('h2', {}, 'Products and services'),
           h('p', { class: 'small muted' }, 'Pick a saved product or type a new one: new products are added to the product list automatically. Unit cost is internal and never printed.'),
           h('div', { class: 'tablewrap' }, h('table', { class: 'lines' }, h('thead', {}, head), tbody)),
@@ -464,7 +465,7 @@ async function quoteDetail(el, id) {
           h('dt', {}, 'Email / phone'), h('dd', {}, [c.email, c.phone].filter(Boolean).join(' · ') || h('span', { class: 'muted' }, 'not set')),
           c.address ? [h('dt', {}, 'Address'), h('dd', {}, c.address)] : null,
           h('dt', {}, 'Site'), h('dd', {}, q.site || '-'), h('dt', {}, 'Date'), h('dd', {}, fmtDay(q.quote_date)), h('dt', {}, 'Valid until'), h('dd', {}, fmtDay(q.valid_until)),
-          h('dt', {}, 'Client LPO'), h('dd', {}, q.lpo || '-'), h('dt', {}, 'Manual quotation'), h('dd', {}, q.manual_no || (q.manual_quotation ? 'Yes (no number)' : 'No')), q.remarks ? [h('dt', {}, 'Remarks'), h('dd', {}, q.remarks)] : null,
+          h('dt', {}, 'Client LPO'), h('dd', {}, q.lpo || '-'), h('dt', {}, 'PO'), h('dd', {}, q.po_no || '-'), h('dt', {}, 'Manual quotation'), h('dd', {}, q.manual_no || (q.manual_quotation ? 'Yes (no number)' : 'No')), q.remarks ? [h('dt', {}, 'Remarks'), h('dd', {}, q.remarks)] : null,
           h('dt', {}, 'Created by'), h('dd', {}, q.created_by_name || '-'))),
       h('div', { class: 'card summary' }, h('h2', {}, 'Revenue, cost and margin'),
         h('div', { class: 'r' }, h('span', {}, 'Subtotal'), h('b', {}, money(q.subtotal))),
