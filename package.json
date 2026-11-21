@@ -10,6 +10,7 @@
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.js",
     "import": "node --disable-warning=ExperimentalWarning scripts/import.js",
+    "import-quotations": "node --disable-warning=ExperimentalWarning scripts/import-quotations.js",
     "google-auth": "node scripts/google-auth.js"
   },
   "license": "UNLICENSED",
