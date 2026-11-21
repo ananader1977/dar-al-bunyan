@@ -192,7 +192,7 @@ export function createService(ctx) {
     return { quotation: q, lines, client, events, invoice, actualCost: actual?.s ?? null, expenseCount: actual?.n ?? null, attachments: listAttachments('quotation', q.id) };
   }
   function listQuotes({ status, q: term, mine, user } = {}) {
-    let sql = `SELECT q.id,q.number,q.subject,q.site,q.quote_date,q.status,q.net,q.total,q.cost_total,q.created_by,q.updated_at,q.lpo,c.name client_name,u.name created_by_name,
+    let sql = `SELECT q.id,q.number,q.subject,q.site,q.quote_date,q.status,q.net,q.total,q.cost_total,q.created_by,q.updated_at,q.lpo,q.manual_quotation,q.remarks,c.name client_name,u.name created_by_name,
       (SELECT number FROM invoices i WHERE i.quotation_id=q.id AND i.status<>'cancelled') invoice_number,
       (SELECT COUNT(*) FROM attachments a WHERE a.entity='quotation' AND a.entity_id=q.id) attach_count
       FROM quotations q JOIN clients c ON c.id=q.client_id LEFT JOIN users u ON u.id=q.created_by WHERE 1=1`;
@@ -252,10 +252,12 @@ export function createService(ctx) {
       const qDate = isoDate(body.quote_date, existing?.quote_date || today());
       const valid = isoDate(body.valid_until, existing?.valid_until || addDays(qDate, num(s.quote_validity_days, 30)));
       const f = [clientId, subject, clampStr(body.site, 200), qDate, valid, discountPct, vatRate, t.subtotal, t.discount, t.net, t.vat, t.total, t.cost_total,
-        clampStr(body.lpo, 120), clampStr(body.terms ?? s.quote_terms, 4000), clampStr(body.notes, 4000)];
+        clampStr(body.lpo, 120), clampStr(body.terms ?? s.quote_terms, 4000), clampStr(body.notes, 4000),
+        body.manual_quotation === undefined ? (existing?.manual_quotation ?? 0) : (body.manual_quotation === true || body.manual_quotation === 1 || body.manual_quotation === '1' ? 1 : 0),
+        body.remarks === undefined ? (existing?.remarks ?? '') : clampStr(body.remarks, 4000)];
       let qid;
       if (existing) {
-        db.prepare(`UPDATE quotations SET client_id=?,subject=?,site=?,quote_date=?,valid_until=?,discount_pct=?,vat_rate=?,subtotal=?,discount=?,net=?,vat=?,total=?,cost_total=?,lpo=?,terms=?,notes=?,updated_at=? WHERE id=?`).run(...f, ctx.now(), existing.id);
+        db.prepare(`UPDATE quotations SET client_id=?,subject=?,site=?,quote_date=?,valid_until=?,discount_pct=?,vat_rate=?,subtotal=?,discount=?,net=?,vat=?,total=?,cost_total=?,lpo=?,terms=?,notes=?,manual_quotation=?,remarks=?,updated_at=? WHERE id=?`).run(...f, ctx.now(), existing.id);
         qid = existing.id;
         db.prepare('DELETE FROM quote_lines WHERE quotation_id=?').run(qid);
         event(qid, user, 'edited');
@@ -265,8 +267,8 @@ export function createService(ctx) {
         let k = n;
         while (db.prepare('SELECT 1 FROM quotations WHERE number=?').get(number)) number = `${s.quote_prefix}${++k}`;
         setSetting('next_quote_no', k + 1);
-        qid = Number(db.prepare(`INSERT INTO quotations(client_id,subject,site,quote_date,valid_until,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,number,status,created_by,created_at,updated_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?)`).run(...f, number, user.id, ctx.now(), ctx.now()).lastInsertRowid);
+        qid = Number(db.prepare(`INSERT INTO quotations(client_id,subject,site,quote_date,valid_until,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,remarks,number,status,created_by,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?,?)`).run(...f, number, user.id, ctx.now(), ctx.now()).lastInsertRowid);
         event(qid, user, 'created');
       }
       const ins = db.prepare('INSERT INTO quote_lines(quotation_id,pos,product_id,description,qty,unit,unit_price,unit_cost,amount,cost) VALUES(?,?,?,?,?,?,?,?,?,?)');

@@ -256,7 +256,11 @@ export const adminViews = {
       const x = file.files[0]; file.value = '';
       if (!x) return;
       toast('Importing…', 2000);
-      const res = await run(async () => A('POST', '/import', { data: await fileToBase64(x) }));
+      const data = await fileToBase64(x);
+      let res = await run(async () => A('POST', '/import', { data, dry: true }));
+      if (!res) return;
+      if (res.kind === 'quotations') { quotationPreview(res, data); return; }
+      res = await run(async () => A('POST', '/import', { data })); // not a Quotations sheet: it was imported at once
       if (res) modal(h('h2', {}, 'Import finished'), h('dl', { class: 'kv' }, h('dt', {}, 'Quotations'), h('dd', {}, res.quotations), h('dt', {}, 'Expenses'), h('dd', {}, res.expenses), h('dt', {}, 'Personal loans'), h('dd', {}, res.loans || 0), h('dt', {}, 'Invoices'), h('dd', {}, res.invoices), h('dt', {}, 'New customers'), h('dd', {}, res.clients), h('dt', {}, 'Skipped (already imported or empty)'), h('dd', {}, res.skipped)), h('p', {}, h('button', { class: 'btn', onclick: closeModal }, 'OK')));
     } });
     const backups = h('div', {});
@@ -289,7 +293,7 @@ export const adminViews = {
           h('dt', {}, 'Attachments'), h('dd', {}, r.storage === 'drive' ? 'Google Drive' : 'Server disk (Google Drive not connected; see README)'),
           h('dt', {}, 'Online payments'), h('dd', {}, r.payments === 'stripe' ? 'Stripe (live card payments)' : 'DEMO checkout: switch to Stripe when you are ready')),
           h('p', {}, h('button', { class: 'btn alt sm', onclick: async () => { const x = await run(() => A('POST', '/email-test', {})); if (x) toast(`Test email: ${x.status}`); } }, 'Send me a test email')))),
-      h('div', { class: 'card' }, h('h2', {}, 'Data'), h('p', { class: 'small muted' }, 'Import the Zoho "Expenses_Report" Excel file. Rows that were already imported are skipped, so it is safe to import an updated file.'),
+      h('div', { class: 'card' }, h('h2', {}, 'Data'), h('p', { class: 'small muted' }, 'Import the Zoho "Expenses_Report" Excel file (rows already imported are skipped), or a "Quotations" Excel export that you edited or extended: quotations with a matching Number are updated, new rows are added with new numbers, and invoice amounts are corrected. Quotations sheets show a preview first.'),
         h('p', { class: 'actions' }, file, h('button', { class: 'btn', onclick: () => file.click() }, 'Import Excel file'), h('a', { class: 'btn alt', href: '/api/app/export.xlsx' }, 'Export all data to Excel'))));
     await loadBackups();
   },
@@ -408,6 +412,26 @@ function expenseDialog(e, quotes, done) {
   else att.append(h('p', { class: 'small muted' }, 'Save the expense first, then open it again to attach receipts.'));
 }
 export { expenseDialog, jobChoices };
+
+/** Preview of a Quotations sheet import (nothing is saved yet) with Apply / Cancel. */
+function quotationPreview(r, data) {
+  const list = (title, items, cap = 12) => (items.length ? [h('h3', {}, `${title} (${items.length})`), h('ul', { class: 'small' }, items.slice(0, cap).map((x) => h('li', {}, x)), items.length > cap ? h('li', { class: 'muted' }, `… and ${items.length - cap} more`) : null)] : []);
+  const chg = (c) => Object.entries(c).map(([k, [a, b]]) => `${k}: ${a} → ${b}`).join('; ');
+  const apply = async () => {
+    const res = await run(() => A('POST', '/import', { data }));
+    if (!res) return;
+    modal(h('h2', {}, 'Quotations imported'), h('p', {}, `${res.created} added (${res.generated.length} with new numbers), ${res.updated} updated, ${res.unchanged} unchanged, ${res.invoicesFixed.length} invoice(s) corrected.`),
+      h('p', {}, h('button', { class: 'btn', onclick: () => { closeModal(); location.hash = '#quotations'; } }, 'OK')));
+  };
+  modal(h('h2', {}, 'Quotations sheet: check before importing'),
+    h('dl', { class: 'kv' }, h('dt', {}, 'New quotations'), h('dd', {}, `${r.created} (${r.generated.length} get a new number, ${r.createdNumbered} keep the number in the sheet)`), h('dt', {}, 'Updated'), h('dd', {}, r.updated), h('dt', {}, 'Unchanged'), h('dd', {}, r.unchanged),
+      h('dt', {}, 'Invoices to correct'), h('dd', {}, r.invoicesFixed.length), h('dt', {}, 'New customers'), h('dd', {}, r.newClients)),
+    list('New numbers', r.generated.map((g) => `${g.number} · ${fmtDay(g.date)} · ${g.subject} · ${num2(g.net)}`)),
+    list('Updated quotations', r.updates.map((u) => `${u.number} · ${chg(u.changes)}`)),
+    list('Invoice amounts corrected', r.invoicesFixed.map((i) => `${i.invoice} (${i.status}) for ${i.quotation}: total ${num2(i.old.total)} → ${num2(i.new.total)}`)),
+    list('Invoice notes', r.invoiceNotes), list('Warnings', r.warnings),
+    h('p', { class: 'actions' }, h('button', { class: 'btn ok', onclick: apply }, 'Import now'), h('button', { class: 'btn alt', onclick: closeModal }, 'Cancel')));
+}
 
 function paidDialog(i, done) {
   const date = h('input', { type: 'date', value: todayIso() });

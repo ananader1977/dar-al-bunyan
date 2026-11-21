@@ -175,3 +175,178 @@ export function importExpensesReport(ctx, buf, user = null) {
   });
   return result;
 }
+
+// ---- Quotations sheet (the app's own "Quotations" Excel export, edited or extended) ---------
+// Rows with a Number that exists are UPDATED; rows with a new Number are ADDED under that number; rows with no Number are ADDED
+// as manual quotations and get the next free number. Amounts of an existing invoice are corrected to match its quotation.
+const QUOTE_RANK = { draft: 0, pending: 1, rejected: 1, approved: 2, sent: 3, accepted: 4, declined: 4 };
+const STATUS_WORDS = { draft: 'draft', 'waiting approval': 'sent', pending: 'pending', approved: 'approved', returned: 'rejected', rejected: 'rejected', sent: 'sent', accepted: 'accepted', declined: 'declined' };
+const yes = (v) => /^(yes|y|true|1|manual)$/i.test(String(v ?? '').trim());
+const same = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
+class DryRun extends Error {}
+
+export function isQuotationSheet(rows) {
+  const head = (rows[0] || []).map((h) => String(h).trim().toLowerCase());
+  return head.includes('number') && head.includes('net (excl. vat)') && !head.includes('paid on');
+}
+
+export function importQuotationsSheet(ctx, buf, user = null, { dry = false } = {}) {
+  const rows = readXlsx(buf);
+  if (!isQuotationSheet(rows)) throw new HttpError(400, 'This does not look like the Quotations export (needs "Number" and "Net (excl. VAT)" columns).');
+  const head = rows[0].map((h) => String(h).trim().toLowerCase());
+  const col = (...names) => { for (const n of names) { const i = head.indexOf(n.toLowerCase()); if (i >= 0) return i; } return -1; };
+  const C = { number: col('Number'), date: col('Date'), customer: col('Customer'), subject: col('Subject'), site: col('Site'), status: col('Status'), net: col('Net (excl. VAT)'),
+    vat: col('VAT'), total: col('Total'), cost: col('Estimated cost'), lpo: col('LPO'), invoice: col('Invoice'), createdBy: col('Created by'), manual: col('Manual Quotation'), remarks: col('Remarks') };
+  if (C.date < 0 || C.net < 0) throw new HttpError(400, 'The "Date" and "Net (excl. VAT)" columns are required.');
+  const at = (r, i) => (i >= 0 ? r[i] : '');
+  const { db } = ctx, svc = ctx.service, s = ctx.settings();
+  const users = db.prepare('SELECT id,name FROM users').all();
+  const userByName = (n) => users.find((u) => u.name.trim().toLowerCase() === String(n || '').trim().toLowerCase())?.id || null;
+  const out = { kind: 'quotations', dry, rows: 0, created: 0, createdNumbered: 0, updated: 0, unchanged: 0, newClients: 0, generated: [], updates: [], invoicesFixed: [], invoiceNotes: [], warnings: [] };
+  const warn = (line, msg) => out.warnings.push(`Row ${line}: ${msg}`);
+
+  // 1. read every row into a clean record
+  const recs = [];
+  rows.slice(1).forEach((r, i) => {
+    const line = i + 2;
+    if (!r.some((v) => String(v ?? '').trim() !== '')) return;
+    const date = excelDate(at(r, C.date));
+    const net = round2(numOf(at(r, C.net)));
+    const stRaw = String(at(r, C.status) || '').trim().toLowerCase();
+    if (!date) { warn(line, 'no valid Date: skipped.'); return; }
+    if (!(net > 0)) { warn(line, 'Net amount is empty or zero: skipped.'); return; }
+    if (stRaw && !STATUS_WORDS[stRaw]) { warn(line, `unknown status "${at(r, C.status)}": skipped.`); return; }
+    const vat = round2(numOf(at(r, C.vat))), total = round2(numOf(at(r, C.total)));
+    const vatRate = C.vat >= 0 && String(at(r, C.vat)) !== '' ? Math.round((vat / net) * 10000) / 100 : Number(s.vat_rate) || 5;
+    if (C.total >= 0 && String(at(r, C.total)) !== '' && !same(net + vat, total)) warn(line, `Net ${net} + VAT ${vat} is not Total ${total}; the total was recalculated from Net and VAT.`);
+    const numRaw = String(at(r, C.number) ?? '').trim();
+    const lpoRaw = at(r, C.lpo);
+    recs.push({
+      line, date, net, vatRate: vatRate >= 0 && vatRate <= 100 ? vatRate : Number(s.vat_rate) || 5, cost: round2(numOf(at(r, C.cost))), status: STATUS_WORDS[stRaw] || null,
+      number: numRaw ? (/^\d+$/.test(numRaw) ? `${s.quote_prefix}${numRaw}` : numRaw) : '', customer: String(at(r, C.customer) || '').trim(),
+      subject: String(at(r, C.subject) || '').trim(), site: String(at(r, C.site) || '').trim(), lpo: typeof lpoRaw === 'number' ? String(Math.round(lpoRaw)) : String(lpoRaw || '').trim(),
+      invoice: String(at(r, C.invoice) || '').trim(), creator: userByName(at(r, C.createdBy)) || user?.id || null,
+      manual: C.manual >= 0 && String(at(r, C.manual)).trim() !== '' ? yes(at(r, C.manual)) : null, remarks: String(at(r, C.remarks) || '').trim(),
+    });
+  });
+  const seen = new Map();
+  for (const r of recs) if (r.number) { if (seen.has(r.number)) warn(r.line, `Number ${r.number} is also on row ${seen.get(r.number)}; the later row wins.`); seen.set(r.number, r.line); }
+
+  const clientFrom = (r) => {
+    const name = r.customer && r.customer.toLowerCase() !== 'unassigned' ? r.customer : null;
+    if (!name) return null;
+    return svc.upsertClient({ name, notes: 'Created from the Excel import; add contact details.' }, { update: false });
+  };
+  const subjectOf = (r) => r.subject || (r.site ? `Job - ${r.site}` : 'Job');
+  const setLines = (qid, subject, net, cost) => {
+    db.prepare('DELETE FROM quote_lines WHERE quotation_id=?').run(qid);
+    db.prepare('INSERT INTO quote_lines(quotation_id,pos,description,qty,unit,unit_price,unit_cost,amount,cost) VALUES(?,1,?,1,?,?,?,?,?)').run(qid, subject, 'Job', net, cost, net, cost);
+  };
+  const ev = (qid, note) => db.prepare('INSERT INTO quote_events(quotation_id,ts,user_id,action,note) VALUES(?,?,?,?,?)').run(qid, ctx.now(), user?.id || null, 'imported from Excel', note);
+  let maxNo = 0;
+  const clientsBefore = db.prepare('SELECT COUNT(*) n FROM clients').get().n;
+
+  const update = (q, r) => {
+    const t = svc.totals([{ amount: r.net, cost: r.cost }], 0, r.vatRate);
+    const ch = {};
+    const set = {};
+    const diff = (k, label, oldV, newV, same_) => { if (!(same_ ?? oldV === newV)) { ch[label] = [oldV, newV]; set[k] = newV; } };
+    const cid = clientFrom(r);
+    if (cid && cid !== q.client_id) diff('client_id', 'customer', db.prepare('SELECT name FROM clients WHERE id=?').get(q.client_id).name, db.prepare('SELECT name FROM clients WHERE id=?').get(cid).name, false), set.client_id = cid;
+    if (r.subject) diff('subject', 'subject', q.subject, r.subject);
+    if (r.site) diff('site', 'site', q.site, r.site);
+    diff('quote_date', 'date', q.quote_date, r.date);
+    if (r.lpo) diff('lpo', 'LPO', q.lpo, r.lpo);
+    if (r.remarks) diff('remarks', 'remarks', q.remarks, r.remarks);
+    if (r.manual !== null) diff('manual_quotation', 'manual quotation', q.manual_quotation ? 'Yes' : 'No', r.manual ? 'Yes' : 'No', !!q.manual_quotation === r.manual), set.manual_quotation = r.manual ? 1 : 0;
+    if (r.status && r.status !== q.status) {
+      const closing = r.status === 'accepted' || r.status === 'declined';
+      if (closing || QUOTE_RANK[r.status] > QUOTE_RANK[q.status]) { ch.status = [q.status, r.status]; set.status = r.status; if (closing && !q.closed_at) set.closed_at = r.date; if (r.status === 'pending' && !q.submitted_at) set.submitted_at = ctx.now(); }
+      else warn(r.line, `${q.number}: status kept as "${q.status}" (the sheet says "${r.status}", which would move it backwards).`);
+    }
+    const amountsChanged = !same(q.net, t.net) || !same(q.cost_total, t.cost_total) || !same(q.vat, t.vat) || !same(q.total, t.total) || !same(q.vat_rate, r.vatRate) || Number(q.discount) !== 0;
+    if (amountsChanged) {
+      for (const [k, lab] of [['net', 'net'], ['vat', 'VAT'], ['total', 'total'], ['cost_total', 'estimated cost']]) if (!same(q[k], t[k])) ch[lab] = [q[k], t[k]];
+      Object.assign(set, { discount_pct: 0, discount: 0, vat_rate: r.vatRate, subtotal: t.subtotal, net: t.net, vat: t.vat, total: t.total, cost_total: t.cost_total });
+    }
+    if (!Object.keys(ch).length && !amountsChanged) { out.unchanged++; return; }
+    const note = [];
+    if (amountsChanged) {
+      const lines = db.prepare('SELECT description,qty,unit,unit_price,unit_cost,amount,cost FROM quote_lines WHERE quotation_id=? ORDER BY pos').all(q.id);
+      if (lines.length === 1 && lines[0].qty === 1) { db.prepare('UPDATE quote_lines SET unit_price=?,amount=?,unit_cost=?,cost=? WHERE quotation_id=?').run(t.net, t.net, t.cost_total, t.cost_total, q.id); }
+      else { setLines(q.id, r.subject || q.subject, t.net, t.cost_total); if (lines.length > 1) { note.push(`${lines.length} item lines were replaced by one line; previous lines: ${JSON.stringify(lines)}`); ch['item lines'] = [`${lines.length} lines`, '1 line']; } }
+    }
+    set.updated_at = ctx.now();
+    db.prepare(`UPDATE quotations SET ${Object.keys(set).map((k) => `${k}=?`).join(',')} WHERE id=?`).run(...Object.values(set), q.id);
+    ev(q.id, [`changed: ${Object.entries(ch).map(([k, [a, b]]) => `${k} ${a} -> ${b}`).join('; ')}`, ...note].join(' | '));
+    out.updated++;
+    out.updates.push({ number: q.number, changes: ch });
+  };
+
+  const insert = (r, number) => {
+    const t = svc.totals([{ amount: r.net, cost: r.cost }], 0, r.vatRate);
+    const cid = clientFrom(r) || svc.upsertClient({ name: r.customer ? 'Unassigned' : clientFor(`${subjectOf(r)} ${r.site}`), notes: 'Jobs from the Excel import with no client given. Reassign them.' }, { update: false });
+    const subject = subjectOf(r);
+    if (!r.subject) warn(r.line, `no Subject: used "${subject}".`);
+    const st = r.status || 'draft';
+    const closing = st === 'accepted' || st === 'declined';
+    const manual = r.manual !== null ? r.manual : !r.number;
+    const qid = Number(db.prepare(`INSERT INTO quotations(number,client_id,subject,site,quote_date,valid_until,status,discount_pct,vat_rate,subtotal,discount,net,vat,total,cost_total,lpo,terms,notes,manual_quotation,remarks,created_by,submitted_at,closed_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,0,?,?,0,?,?,?,?,?,?,'',?,?,?,?,?,?,?)`).run(number, cid, subject, r.site, r.date, addDaysIso(r.date, Number(s.quote_validity_days) || 30), st, r.vatRate, t.subtotal, t.net, t.vat, t.total, t.cost_total,
+      r.lpo, s.quote_terms, manual ? 1 : 0, r.remarks, r.creator, st === 'pending' ? ctx.now() : null, closing ? r.date : null, ctx.now(), ctx.now()).lastInsertRowid);
+    setLines(qid, subject, t.net, t.cost_total);
+    ev(qid, `${manual ? 'manual quotation ' : ''}added from the Excel sheet (row ${r.line}), status ${st}`);
+    out.created++;
+    return qid;
+  };
+
+  try {
+    tx(db, () => {
+      const handled = new Set();
+      const find = (r) => {
+        if (r.number) return db.prepare('SELECT * FROM quotations WHERE number=?').get(r.number);
+        // no number: an identical quotation (same date, net, subject, site, LPO) is the same job, not a new one
+        return db.prepare('SELECT * FROM quotations WHERE quote_date=? AND ABS(net-?)<0.005 AND lower(subject)=lower(?) AND lower(site)=lower(?) AND lower(lpo)=lower(?)').get(r.date, r.net, subjectOf(r), r.site, r.lpo || '');
+      };
+      const fresh = [];
+      for (const r of recs) {
+        if (r.number && seen.get(r.number) !== r.line) continue; // duplicate number in the file: the later row wins
+        const q = find(r);
+        if (q) { if (handled.has(q.id)) { warn(r.line, `same job as an earlier row (${q.number}): skipped.`); continue; } handled.add(q.id); update(q, r); out.rows++; continue; }
+        fresh.push(r);
+      }
+      // new rows that already carry a Number keep it; the others get the next free numbers, oldest date first
+      for (const r of fresh.filter((x) => x.number)) { insert(r, r.number); out.createdNumbered++; out.rows++; const n = /(\d+)$/.exec(r.number); if (n && r.number.startsWith(s.quote_prefix)) maxNo = Math.max(maxNo, Number(n[1])); }
+      let next = Number(db.prepare("SELECT value FROM settings WHERE key='next_quote_no'").get()?.value) || 1;
+      for (const r of fresh.filter((x) => !x.number).sort((a, b) => a.date.localeCompare(b.date) || a.line - b.line)) {
+        while (db.prepare('SELECT 1 FROM quotations WHERE number=?').get(`${s.quote_prefix}${next}`)) next++;
+        const number = `${s.quote_prefix}${next++}`;
+        insert(r, number); out.rows++;
+        out.generated.push({ row: r.line, number, date: r.date, subject: subjectOf(r), net: r.net });
+      }
+      svc.setSetting('next_quote_no', Math.max(next, maxNo + 1));
+
+      // 3. invoices must show the same amounts as their quotation
+      const invMismatch = db.prepare("SELECT i.*, q.number qnum, q.net qnet, q.vat qvat, q.total qtotal, q.vat_rate qrate, q.discount qdisc, q.discount_pct qdpct, q.id qid FROM invoices i JOIN quotations q ON q.id=i.quotation_id WHERE i.status<>'cancelled' AND q.id=?");
+      for (const r of recs) {
+        const q = find(r);
+        if (!q) continue;
+        const inv = invMismatch.get(q.id);
+        if (!inv) { if (r.invoice) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, but the app has no invoice for it. Nothing was created.`); continue; }
+        if (r.invoice && r.invoice !== inv.number) out.invoiceNotes.push(`${q.number}: the sheet shows invoice ${r.invoice}, the app has ${inv.number}. Left as in the app.`);
+        if (same(inv.net, inv.qnet) && same(inv.vat, inv.qvat) && same(inv.total, inv.qtotal)) continue;
+        db.prepare('UPDATE invoices SET net=?, vat_rate=?, vat=?, total=? WHERE id=?').run(inv.qnet, inv.qrate, inv.qvat, inv.qtotal, inv.id);
+        db.prepare('DELETE FROM invoice_lines WHERE invoice_id=?').run(inv.id);
+        const ins = db.prepare('INSERT INTO invoice_lines(invoice_id,pos,description,qty,unit,unit_price,amount) VALUES(?,?,?,?,?,?,?)');
+        const ql = db.prepare('SELECT * FROM quote_lines WHERE quotation_id=? ORDER BY pos').all(q.id);
+        ql.forEach((l, i) => ins.run(inv.id, i + 1, l.description, l.qty, l.unit, l.unit_price, l.amount));
+        svc.audit(user, 'invoice amounts corrected by import', 'invoice', inv.id, `${inv.number}: total ${inv.total} -> ${inv.qtotal}`);
+        out.invoicesFixed.push({ invoice: inv.number, quotation: inv.qnum, status: inv.status, old: { net: inv.net, vat: inv.vat, total: inv.total }, new: { net: inv.qnet, vat: inv.qvat, total: inv.qtotal } });
+      }
+      out.newClients = db.prepare('SELECT COUNT(*) n FROM clients').get().n - clientsBefore;
+      if (dry) throw new DryRun();
+    });
+  } catch (e) { if (!(e instanceof DryRun)) throw e; }
+  return out;
+}
+const addDaysIso = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };

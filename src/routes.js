@@ -2,7 +2,7 @@ import { HttpError } from './http.js';
 import { verifyPassword, hashPassword, validatePasswordStrength } from './auth.js';
 import { SETTING_DEFAULTS, COST_TYPES, UNITS, tx } from './db.js';
 import { buildXlsx } from './xlsx.js';
-import { importExpensesReport } from './importer.js';
+import { importExpensesReport, importQuotationsSheet, isQuotationSheet, readXlsx } from './importer.js';
 import { clampStr, isEmail } from './util.js';
 import { money, dateKey } from './time.js';
 import fs from 'node:fs';
@@ -245,7 +245,8 @@ export function registerRoutes(app, ctx) {
     { header: 'Site', key: 'site', width: 20 }, { header: 'Status', key: 'status', width: 11 }, { header: 'Net (excl. VAT)', key: 'net', type: 'money' }, { header: 'VAT', value: (r) => Math.round((r.total - r.net) * 100) / 100, type: 'money' },
     { header: 'Total', key: 'total', type: 'money' }, { header: 'Estimated cost', key: 'cost_total', type: 'money' }, { header: 'Profit', value: (r) => Math.round((r.net - r.cost_total) * 100) / 100, type: 'money' },
     { header: 'Margin %', value: (r) => (r.net ? Math.round(((r.net - r.cost_total) / r.net) * 1000) / 10 : 0), type: 'number', width: 10 },
-    { header: 'LPO', key: 'lpo', width: 16 }, { header: 'Invoice', key: 'invoice_number', width: 14 }, { header: 'Attachments', key: 'attach_count', type: 'number', width: 11 }, { header: 'Created by', key: 'created_by_name', width: 16 }];
+    { header: 'LPO', key: 'lpo', width: 16 }, { header: 'Invoice', key: 'invoice_number', width: 14 }, { header: 'Attachments', key: 'attach_count', type: 'number', width: 11 }, { header: 'Created by', key: 'created_by_name', width: 16 },
+    { header: 'Manual Quotation', value: (r) => (r.manual_quotation ? 'Yes' : 'No'), width: 16 }, { header: 'Remarks', key: 'remarks', width: 40 }];
   app.get('/api/app/export/quotations.xlsx', U, (req, res) => {
     const rows = svc.listQuotes({ status: req.query.status, q: req.query.q, user: req.user });
     const ids = rows.map((r) => r.id);
@@ -333,7 +334,8 @@ export function registerRoutes(app, ctx) {
       { name: 'Quotations', columns: [
         { header: 'Number', key: 'number', width: 14 }, { header: 'Date', key: 'quote_date', width: 12 }, { header: 'Customer', key: 'client_name', width: 24 }, { header: 'Subject', key: 'subject', width: 48 },
         { header: 'Status', key: 'status' }, { header: 'Net (excl. VAT)', key: 'net', type: 'money' }, { header: 'VAT', key: 'vat', type: 'money' }, { header: 'Total', key: 'total', type: 'money' },
-        { header: 'Estimated cost', key: 'cost_total', type: 'money' }, { header: 'LPO', key: 'lpo' }, { header: 'Created by', key: 'created_by_name' }], rows: quotes },
+        { header: 'Estimated cost', key: 'cost_total', type: 'money' }, { header: 'LPO', key: 'lpo' }, { header: 'Created by', key: 'created_by_name' },
+        { header: 'Manual Quotation', value: (r) => (r.manual_quotation ? 'Yes' : 'No'), width: 16 }, { header: 'Remarks', key: 'remarks', width: 40 }], rows: quotes },
       { name: 'Invoices', columns: [{ header: 'Number', key: 'number' }, { header: 'Date', key: 'issue_date' }, { header: 'Due', key: 'due_date' }, { header: 'Customer', key: 'client_name', width: 24 }, { header: 'Subject', key: 'subject', width: 48 }, { header: 'Net', key: 'net', type: 'money' }, { header: 'VAT', key: 'vat', type: 'money' }, { header: 'Total', key: 'total', type: 'money' }, { header: 'Status', key: 'status' }, { header: 'Paid on', key: 'paid_at' }],
         rows: db.prepare('SELECT i.*, c.name client_name FROM invoices i JOIN clients c ON c.id=i.client_id ORDER BY issue_date DESC').all() },
       { name: 'Profit by month', columns: [{ header: 'Month', key: 'month' }, { header: 'Revenue', key: 'revenue', type: 'money' }, { header: 'Costs', key: 'cost', type: 'money' }, { header: 'Profit earned', key: 'profit', type: 'money' }, { header: 'Profit payable', key: 'payable', type: 'money' }, { header: `${s.partner_a} ${s.partner_a_share}%`, key: 'a', type: 'money' }, { header: `${s.partner_b} ${s.partner_b_share}%`, key: 'bGross', type: 'money' }],
@@ -347,6 +349,13 @@ export function registerRoutes(app, ctx) {
     const b = await req.json();
     const buf = Buffer.from(String(b.data || ''), 'base64');
     if (!buf.length) throw new HttpError(400, 'Choose the Excel file first.');
+    // A Quotations export (Number / Net columns) updates and adds quotations; anything else is the Zoho Expenses Report.
+    if (isQuotationSheet(readXlsx(buf))) {
+      const r = importQuotationsSheet(ctx, buf, req.user, { dry: b.dry === true });
+      if (!r.dry) svc.audit(req.user, 'Quotations Excel imported', 'import', null, JSON.stringify({ created: r.created, updated: r.updated, invoicesFixed: r.invoicesFixed.length }));
+      return res.json(r);
+    }
+    if (b.dry === true) return res.json({ kind: 'expenses', dry: true }); // the Expenses Report has no preview
     const r = importExpensesReport(ctx, buf, req.user);
     svc.audit(req.user, 'Excel imported', 'import', null, JSON.stringify(r));
     res.json(r);

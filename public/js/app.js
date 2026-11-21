@@ -168,7 +168,7 @@ export function quoteTable(rows, { showCost = true } = {}) {
       const m = pct(q.net - q.cost_total, q.net);
       return h('tr', { class: 'click', onclick: () => go(`quote/${q.id}`) },
         h('td', { class: 'nowrap' }, h('b', {}, q.number)), h('td', { class: 'nowrap' }, fmtDay(q.quote_date)),
-        h('td', {}, h('div', {}, h('b', {}, q.client_name)), h('div', { class: 'small muted' }, q.subject)),
+        h('td', {}, h('div', {}, h('b', {}, q.client_name)), h('div', { class: 'small muted' }, q.subject, q.manual_quotation ? ' · ' : null, q.manual_quotation ? h('b', { title: 'Made manually, entered afterwards' }, 'Manual') : null)),
         h('td', {}, badge(q.status), q.invoice_number ? h('div', { class: 'small muted' }, q.invoice_number) : null),
         h('td', { class: 'num' }, num2(q.net)), showCost ? h('td', { class: 'num' }, h('span', { class: `badge ${marginClass(m) === 'good' ? 'accepted' : marginClass(m) === 'mid' ? 'pending' : 'rejected'}` }, `${m}%`)) : null,
         h('td', { class: 'num' }, h('b', {}, num2(q.total))),
@@ -313,6 +313,8 @@ async function quoteForm(el, data) {
     discount_pct: inp('discount_pct', q.discount_pct ?? 0, { type: 'number', min: 0, max: 100, step: '0.01' }),
     terms: h('textarea', { name: 'terms', value: q.terms ?? lk.settings.quote_terms, rows: 5 }),
     notes: h('textarea', { name: 'notes', value: q.notes || '', rows: 3, placeholder: 'Internal notes are printed on the quotation too; keep them customer friendly.' }),
+    manual_quotation: h('input', { type: 'checkbox', name: 'manual_quotation', checked: !!q.manual_quotation }),
+    remarks: h('textarea', { name: 'remarks', value: q.remarks || '', rows: 2, placeholder: 'Internal remarks. Never printed.' }),
   };
   const vat = q.vat_rate ?? lk.settings.vat_rate;
 
@@ -371,7 +373,7 @@ async function quoteForm(el, data) {
     const body = {
       client: { id: clientId, name: cf.name.value, contact: cf.contact.value, email: cf.email.value, phone: cf.phone.value, address: cf.address.value, trn: cf.trn.value },
       subject: f.subject.value, site: f.site.value, quote_date: f.quote_date.value, valid_until: f.valid_until.value, lpo: f.lpo.value,
-      discount_pct: f.discount_pct.value, terms: f.terms.value, notes: f.notes.value,
+      discount_pct: f.discount_pct.value, terms: f.terms.value, notes: f.notes.value, manual_quotation: f.manual_quotation.checked, remarks: f.remarks.value,
       lines: rows.map((r) => ({ product_id: r.product_id, description: r.desc.value, qty: r.qty.value, unit: r.unit.value, unit_price: r.price.value, unit_cost: r.cost.value })),
     };
     try {
@@ -392,7 +394,8 @@ async function quoteForm(el, data) {
         h('div', { class: 'card' }, h('h2', {}, 'Customer'), field('Customer name *', cf.name), clientNote,
           h('div', { class: 'grid2' }, field('Contact person', cf.contact), field('Email (for sending)', cf.email), field('Phone', cf.phone), field('TRN', cf.trn)), field('Address', cf.address)),
         h('div', { class: 'card' }, h('h2', {}, 'Quotation details'), field('Subject *', f.subject),
-          h('div', { class: 'grid3' }, field('Site / location', f.site), field('Quotation date', f.quote_date), field('Valid until', f.valid_until, 'Empty = date + validity days'), field('Client LPO / reference', f.lpo))),
+          h('div', { class: 'grid3' }, field('Site / location', f.site), field('Quotation date', f.quote_date), field('Valid until', f.valid_until, 'Empty = date + validity days'), field('Client LPO / reference', f.lpo)),
+          h('label', { class: 'check' }, f.manual_quotation, ' Manual quotation (made on paper or outside the app, entered here afterwards)'), field('Remarks (internal, not printed)', f.remarks)),
         h('div', { class: 'card' }, h('h2', {}, 'Products and services'),
           h('p', { class: 'small muted' }, 'Pick a saved product or type a new one: new products are added to the product list automatically. Unit cost is internal and never printed.'),
           h('div', { class: 'tablewrap' }, h('table', { class: 'lines' }, h('thead', {}, head), tbody)),
@@ -461,7 +464,8 @@ async function quoteDetail(el, id) {
           h('dt', {}, 'Email / phone'), h('dd', {}, [c.email, c.phone].filter(Boolean).join(' · ') || h('span', { class: 'muted' }, 'not set')),
           c.address ? [h('dt', {}, 'Address'), h('dd', {}, c.address)] : null,
           h('dt', {}, 'Site'), h('dd', {}, q.site || '-'), h('dt', {}, 'Date'), h('dd', {}, fmtDay(q.quote_date)), h('dt', {}, 'Valid until'), h('dd', {}, fmtDay(q.valid_until)),
-          h('dt', {}, 'Client LPO'), h('dd', {}, q.lpo || '-'), h('dt', {}, 'Created by'), h('dd', {}, q.created_by_name || '-'))),
+          h('dt', {}, 'Client LPO'), h('dd', {}, q.lpo || '-'), h('dt', {}, 'Manual quotation'), h('dd', {}, q.manual_quotation ? 'Yes' : 'No'), q.remarks ? [h('dt', {}, 'Remarks'), h('dd', {}, q.remarks)] : null,
+          h('dt', {}, 'Created by'), h('dd', {}, q.created_by_name || '-'))),
       h('div', { class: 'card summary' }, h('h2', {}, 'Revenue, cost and margin'),
         h('div', { class: 'r' }, h('span', {}, 'Subtotal'), h('b', {}, money(q.subtotal))),
         q.discount ? h('div', { class: 'r' }, h('span', {}, `Discount ${q.discount_pct}%`), h('b', {}, `- ${money(q.discount)}`)) : null,
