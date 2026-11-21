@@ -119,5 +119,6 @@ label.check{display:flex;align-items:center;gap:8px;font-weight:500}
 @media (display-mode: standalone){.top .brand small{display:none}}
 
 /* Test copy: red bar that stays at the top (no inline styles allowed by the Content-Security-Policy) */
-#testbar{position:sticky;top:0;z-index:1000;background:#c00000;color:#fff;text-align:center;height:20px;line-height:20px;padding:8px 10px;font-weight:700;font-size:14px}
+#testbar{box-sizing:border-box;position:sticky;top:0;z-index:1000;background:#c00000;color:#fff;text-align:center;height:36px;line-height:20px;padding:8px 10px;font-weight:700;font-size:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@media (max-width:700px){#testbar{height:auto;min-height:36px;white-space:normal;font-size:12px}body.testenv .top{top:0}}
 body.testenv .top{top:36px}
