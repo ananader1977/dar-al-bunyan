@@ -117,3 +117,7 @@ label.check{display:flex;align-items:center;gap:8px;font-weight:500}
 .installhint{display:flex;flex-wrap:wrap;align-items:center;gap:4px}.installhint .btn.link{margin-left:auto}
 .shareicon{display:inline-block;border:1px solid currentColor;border-radius:5px;padding:0 5px;font-size:.8rem;line-height:1.3}
 @media (display-mode: standalone){.top .brand small{display:none}}
+
+/* Test copy: red bar that stays at the top (no inline styles allowed by the Content-Security-Policy) */
+#testbar{position:sticky;top:0;z-index:1000;background:#c00000;color:#fff;text-align:center;height:20px;line-height:20px;padding:8px 10px;font-weight:700;font-size:14px}
+body.testenv .top{top:36px}

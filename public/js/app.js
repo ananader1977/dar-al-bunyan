@@ -61,8 +61,8 @@ async function testBanner() {
     const c = await api('GET', '/api/config');
     if (!c.testMode || document.getElementById('testbar')) return;
     document.title = 'TEST · ' + document.title;
-    document.head.append(h('style', {}, '.top{top:36px !important}'));
-    document.body.prepend(h('div', { id: 'testbar', style: 'position:sticky;top:0;z-index:1000;background:#c00000;color:#fff;text-align:center;height:20px;line-height:20px;padding:8px 10px;font-weight:700;font-size:14px' }, 'TEST ENVIRONMENT: test data only. Emails are never sent. Nothing here affects the live app.'));
+    document.body.classList.add('testenv');
+    document.body.prepend(h('div', { id: 'testbar' }, 'TEST ENVIRONMENT: test data only. Emails are never sent. Nothing here affects the live app.'));
   } catch { /* offline: the normal screens explain it */ }
 }
 
