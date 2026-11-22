@@ -578,7 +578,7 @@ export function createService(ctx) {
   function finance({ from, to } = {}) {
     const s = S();
     const inRange = (d) => (!from || d >= from) && (!to || d <= to);
-    const jobs = db.prepare(`SELECT q.id,q.number,q.subject,q.quote_date,q.closed_at,q.paid_at,q.net,q.cost_total,q.share_paid,q.status,c.name client_name, ${REV_DATE} rev_date,
+    const jobs = db.prepare(`SELECT q.id,q.number,q.subject,q.quote_date,q.closed_at,q.paid_at,q.net,q.cost_total,q.share_paid,q.status,q.lpo,q.manual_no,c.name client_name, ${REV_DATE} rev_date,
       (SELECT COALESCE(SUM(total),0) FROM expenses e WHERE e.quotation_id=q.id AND e.status='approved') actual_cost,
       (SELECT number FROM invoices i WHERE i.quotation_id=q.id AND i.status<>'cancelled') invoice_number,
       (SELECT status FROM invoices i WHERE i.quotation_id=q.id AND i.status<>'cancelled') invoice_status

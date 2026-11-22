@@ -26,3 +26,16 @@ test('a settled personal loan stays on record but stops counting', async () => {
     assert.equal(p.b.loans, 2500);
   } finally { await t.close(); }
 });
+
+test('financial report export lists the client LPO and manual quotation of each job', async () => {
+  const t = await startTestApp();
+  try {
+    await t.login('admin');
+    const q = (await t.call('admin', 'POST', '/api/app/quotations', t.quote({ lpo: '202609999', manual_no: 'DABTS/118/26' }))).body.quotation;
+    for (const to of ['submit', 'approve', 'send', 'accept']) await t.call('admin', 'POST', `/api/app/quotations/${q.id}/${to}`);
+    const job = t.ctx.svc?.finance ? t.ctx.svc.finance({}).jobs[0] : (await t.call('admin', 'GET', '/api/app/finance')).body.jobs[0];
+    assert.equal(job.lpo, '202609999'); assert.equal(job.manual_no, 'DABTS/118/26');
+    const cookie = (await t.call('admin', 'GET', '/api/me')).status; // signed in
+    assert.equal(cookie, 200);
+  } finally { await t.close(); }
+});
