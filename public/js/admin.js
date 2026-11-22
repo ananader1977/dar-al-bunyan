@@ -163,8 +163,8 @@ export const adminViews = {
     const card = (name, x, rows) => h('div', { class: 'card summary' }, h('h2', {}, name), ...rows, line('Total earned so far', x.entitled, 'total'), line('Already paid out', -x.paid), line('Still owed now', x.balance, 'total'));
     fill(el,
       h('div', { class: 'split' },
-        card(P.a, d.a, [line(`${P.aShare}% of profit (paid jobs)`, d.a.share), line('Costs to pay back', d.a.costsBack), line(`Personal loans of ${P.b} to pay back`, d.a.loansBack)]),
-        card(P.b, d.b, [line(`${P.bShare}% of profit (paid jobs)`, d.b.share), line('Minus personal loans taken', -d.b.loans)])),
+        card(P.a, d.a, [line(`${P.aShare}% of profit (paid jobs)`, d.a.share), line('Costs to pay back', d.a.costsBack), line(`Open personal loans of ${P.b} to pay back`, d.a.loansBack)]),
+        card(P.b, d.b, [line(`${P.bShare}% of profit (paid jobs)`, d.b.share), line('Minus open personal loans', -d.b.loans)])),
       h('div', { class: 'alert info' }, d.waiting.jobs ? `Waiting for customer payment: ${d.waiting.jobs} job(s), revenue ${money(d.waiting.revenue)}. When paid, ${P.a} gets back their costs (${money(d.waiting.jobCost)}) and the profit (${money(d.waiting.profit)}) is shared.` : 'All accepted jobs are paid by the customers.',
         d.declinedCost ? ` Costs on declined jobs (${money(d.declinedCost)}) are carried by ${P.a} and are not paid back.` : ''),
       h('div', { class: 'split' },
@@ -173,12 +173,7 @@ export const adminViews = {
           d.payments.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Partner'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Note'), isAdmin() ? h('th', {}) : null)),
             h('tbody', {}, d.payments.map((x) => h('tr', {}, h('td', { class: 'nowrap' }, fmtDay(x.paid_on)), h('td', {}, x.partner === 'a' ? P.a : P.b), h('td', { class: 'num' }, h('b', {}, num2(x.amount))), h('td', {}, [x.method, x.note].filter(Boolean).join(' · ') || '-', h('div', { class: 'small muted' }, x.created_by_name || '')),
               isAdmin() ? h('td', { class: 'center' }, delButton('payment', () => del.payment(x), refresh)) : null))))) : h('p', { class: 'muted' }, 'No payments recorded yet.')),
-        h('div', { class: 'card' }, h('div', { class: 'actions' }, h('h2', {}, `Personal loans (${P.b})`), h('button', { class: 'btn red sm', onclick: () => loanDialog(P) }, '+ Record loan')),
-          h('p', { class: 'small muted' }, `Money ${P.a} advanced to ${P.b}. It is deducted from ${P.b}'s share and paid back to ${P.a}. Loans are not company costs.`),
-          d.loans.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Note'), isAdmin() ? h('th', {}) : null)),
-            h('tbody', {}, d.loans.map((x) => h('tr', {}, h('td', { class: 'nowrap' }, fmtDay(x.taken_on)), h('td', { class: 'num' }, h('b', {}, num2(x.amount))), h('td', {}, x.note),
-              isAdmin() ? h('td', { class: 'center' }, delButton('loan', () => del.loan(x), refresh)) : null))),
-            h('tfoot', {}, h('tr', {}, h('td', {}, 'Total'), h('td', { class: 'num' }, num2(d.loans.reduce((a, x) => a + x.amount, 0))), h('td', { colspan: isAdmin() ? 2 : 1 }))))) : h('p', { class: 'muted' }, 'No personal loans.'))));
+        loansCard(d, P)));
   },
 
   // ---------- customers & products ----------
@@ -467,6 +462,32 @@ function paymentDialog(P) {
   modal(h('h2', {}, 'Record a payment to a partner'), h('div', { class: 'grid2' }, field('Date', f.paid_on), field('Partner', f.partner), field('Amount (AED)', f.amount), field('Method', f.method)), field('Note', f.note),
     h('p', { class: 'actions' }, h('button', { class: 'btn red', onclick: async () => { if (await run(() => A('POST', '/partners/payments', Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x.value]))), 'Payment recorded')) { closeModal(); refresh(); } } }, 'Save'), h('button', { class: 'btn alt', onclick: closeModal }, 'Cancel')));
 }
+function loansCard(d, P) {
+  const L = d.loans, T = d.loanTotals;
+  const settleDialog = (x) => {
+    const on = h('input', { type: 'date', value: todayIso() });
+    modal(h('h2', {}, `Settle loan of AED ${num2(x.amount)}`), h('p', { class: 'small muted' }, `${P.b} paid this loan back in full. The loan stays on record as Settled and stops being deducted from ${P.b}'s share and paid back to ${P.a}.`),
+      field('Date settled', on),
+      h('p', { class: 'actions' }, h('button', { class: 'btn red', onclick: async () => { if (await run(() => A('POST', `/partners/loans/${x.id}/settle`, { settled_on: on.value }), 'Loan settled')) { closeModal(); refresh(); } } }, 'Mark as settled'), h('button', { class: 'btn alt', onclick: closeModal }, 'Cancel')));
+  };
+  const state = (x) => (x.settled_on ? h('span', { class: 'badge accepted' }, `Settled ${fmtDay(x.settled_on)}`) : h('span', { class: 'badge pending' }, 'Open'));
+  // statement of account: the loan and its settlement are separate lines, with the running balance owed
+  const ev = [];
+  L.forEach((x) => { ev.push({ on: x.taken_on, k: 0, t: `Loan - ${x.note}`, dr: x.amount }); if (x.settled_on) ev.push({ on: x.settled_on, k: 1, t: `Settled - ${x.note}`, cr: x.amount }); });
+  ev.sort((p, q) => (p.on < q.on ? -1 : p.on > q.on ? 1 : p.k - q.k));
+  let bal = 0; ev.forEach((e) => { bal = Math.round((bal + (e.dr || 0) - (e.cr || 0)) * 100) / 100; e.bal = bal; });
+  return h('div', { class: 'card' }, h('div', { class: 'actions' }, h('h2', {}, `Personal loans (${P.b})`), h('button', { class: 'btn red sm', onclick: () => loanDialog(P) }, '+ Record loan')),
+    h('p', { class: 'small muted' }, `Money ${P.a} advanced to ${P.b}. While a loan is Open it is deducted from ${P.b}'s share and paid back to ${P.a}. When ${P.b} pays it back in full, mark it Settled: it stays on record but no longer affects the balances. Loans are not company costs.`),
+    L.length ? h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Amount'), h('th', {}, 'Note'), h('th', {}, 'Status'), h('th', {}))),
+      h('tbody', {}, L.map((x) => h('tr', {}, h('td', { class: 'nowrap' }, fmtDay(x.taken_on)), h('td', { class: 'num' }, h('b', {}, num2(x.amount))), h('td', {}, x.note), h('td', {}, state(x)),
+        h('td', { class: 'center nowrap' }, x.settled_on ? (isAdmin() ? h('button', { class: 'btn alt sm', onclick: async () => { if (confirm('Reopen this loan? It will count again in the balances.') && await run(() => A('POST', `/partners/loans/${x.id}/reopen`), 'Loan reopened')) refresh(); } }, 'Reopen') : null) : h('button', { class: 'btn ok sm', onclick: () => settleDialog(x) }, 'Settle'),
+          isAdmin() ? delButton('loan', () => del.loan(x), refresh) : null)))),
+      h('tfoot', {}, h('tr', {}, h('td', {}, 'Open'), h('td', { class: 'num' }, num2(T.open)), h('td', { colspan: 3 }, T.settled ? `Settled so far: AED ${num2(T.settled)}` : ''))))) : h('p', { class: 'muted' }, 'No personal loans.'),
+    ev.length ? h('details', {}, h('summary', {}, `Statement of account (${P.b} owes ${P.a}: AED ${num2(T.open)})`),
+      h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Details'), h('th', { class: 'num' }, 'Loan'), h('th', { class: 'num' }, 'Paid back'), h('th', { class: 'num' }, 'Balance'))),
+        h('tbody', {}, ev.map((e) => h('tr', {}, h('td', { class: 'nowrap' }, fmtDay(e.on)), h('td', {}, e.t), h('td', { class: 'num' }, e.dr ? num2(e.dr) : ''), h('td', { class: 'num' }, e.cr ? num2(e.cr) : ''), h('td', { class: 'num' }, h('b', {}, num2(e.bal))))))))) : null);
+}
+
 function loanDialog(P) {
   const f = { taken_on: h('input', { type: 'date', value: todayIso() }), amount: h('input', { type: 'number', step: '0.01', min: 0 }), note: h('input', { placeholder: 'e.g. personal loan' }) };
   modal(h('h2', {}, `Record a personal loan to ${P.b}`), h('p', { class: 'small muted' }, `Money ${P.a} gave ${P.b}. It is deducted from ${P.b}'s share and paid back to ${P.a}.`),

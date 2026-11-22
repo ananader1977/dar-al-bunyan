@@ -586,7 +586,8 @@ export function createService(ctx) {
     const allExps = db.prepare("SELECT e.*, q.status quote_status, q.paid_at quote_paid_at FROM expenses e LEFT JOIN quotations q ON q.id=e.quotation_id WHERE e.status='approved'").all().filter((e) => inRange(e.paid_on));
     const declined = allExps.filter((e) => e.quote_status === 'declined');
     const exps = allExps.filter((e) => e.quote_status !== 'declined');
-    const loanRows = db.prepare('SELECT * FROM partner_loans ORDER BY taken_on').all().filter((l) => inRange(l.taken_on));
+    const loanAll = db.prepare('SELECT * FROM partner_loans ORDER BY taken_on').all().filter((l) => inRange(l.taken_on));
+    const loanRows = loanAll.filter((l) => !l.settled_on); // settled loans stay on record but no longer move any balance
     const pa = num(s.partner_a_share, 60) / 100;
     const sum = (list, k = 'total') => round2(list.reduce((a, e) => a + e[k], 0));
     const shareA = (p) => round2(p * pa);
@@ -626,7 +627,7 @@ export function createService(ctx) {
       monthly,
       costTypes: Object.entries(byType).sort((x, y) => y[1] - x[1]).map(([type, total]) => ({ type, total })),
       jobs: jobs.map((j) => { const pr = round2(j.net - j.actual_cost); const ja = shareA(pr); return { ...j, actual_cost: round2(j.actual_cost), profit: pr, a: ja, b: round2(pr - ja), margin: j.net ? round2((pr / j.net) * 100) : 0 }; }),
-      loans: loanRows,
+      loans: loanAll,
       ledger: { outstanding: { count: outstanding.n, total: round2(outstanding.s) }, unbilled: jobs.filter((j) => !j.invoice_number).length },
     };
   }
@@ -641,7 +642,8 @@ export function createService(ctx) {
     const A_ = { share: t.a, costsBack: t.costsBack, loansBack: t.loans, entitled: t.dueA, paid: paidTo('a') };
     const B_ = { share: t.bGross, loans: t.loans, entitled: t.dueB, paid: paidTo('b') };
     A_.balance = round2(A_.entitled - A_.paid); B_.balance = round2(B_.entitled - B_.paid);
-    return { partners: f.partners, a: A_, b: B_, waiting: { revenue: t.revenueWaiting, jobCost: t.jobCostWaiting, profit: t.profitWaiting, jobs: t.jobsWaiting }, declinedCost: t.declinedCost, payments: pays, loans };
+    const open = round2(loans.filter((l) => !l.settled_on).reduce((a, l) => a + l.amount, 0)), settled = round2(loans.filter((l) => l.settled_on).reduce((a, l) => a + l.amount, 0));
+    return { loanTotals: { open, settled }, partners: f.partners, a: A_, b: B_, waiting: { revenue: t.revenueWaiting, jobCost: t.jobCostWaiting, profit: t.profitWaiting, jobs: t.jobsWaiting }, declinedCost: t.declinedCost, payments: pays, loans };
   }
   function savePayment(user, b) {
     const amount = round2(num(b.amount));
@@ -659,6 +661,22 @@ export function createService(ctx) {
     const id = Number(db.prepare('INSERT INTO partner_loans(taken_on,amount,note,created_by,created_at) VALUES(?,?,?,?,?)').run(isoDate(b.taken_on, today()), amount, clampStr(b.note, 300) || 'Personal loan', user.id, ctx.now()).lastInsertRowid);
     audit(user, 'personal loan recorded', 'loan', id, `AED ${amount}${b.note ? ' - ' + b.note : ''}`);
     return id;
+  }
+  function settleLoan(user, id, b) {
+    const l = db.prepare('SELECT * FROM partner_loans WHERE id=?').get(Number(id));
+    if (!l) throw new HttpError(404, 'Loan not found.');
+    if (l.settled_on) bad('This loan is already settled.');
+    const on = isoDate(b?.settled_on, today());
+    if (on < l.taken_on) bad('The settled date cannot be before the date the loan was taken.');
+    db.prepare('UPDATE partner_loans SET settled_on=?, settled_by=? WHERE id=?').run(on, user.id, l.id);
+    audit(user, 'personal loan settled', 'loan', l.id, `AED ${l.amount} settled on ${on}${l.note ? ' - ' + l.note : ''}`);
+  }
+  function reopenLoan(user, id) {
+    const l = db.prepare('SELECT * FROM partner_loans WHERE id=?').get(Number(id));
+    if (!l) throw new HttpError(404, 'Loan not found.');
+    if (!l.settled_on) bad('This loan is not settled.');
+    db.prepare("UPDATE partner_loans SET settled_on='', settled_by=NULL WHERE id=?").run(l.id);
+    audit(user, 'personal loan reopened', 'loan', l.id, `AED ${l.amount}, was settled on ${l.settled_on}`);
   }
   function deletePayment(user, id) {
     const p = db.prepare('SELECT * FROM partner_payments WHERE id=?').get(Number(id));
@@ -742,7 +760,7 @@ export function createService(ctx) {
 
   return {
     audit, listTrash, restoreTrash, purgeTrash, getExpense, reviewExpense, setJobPaid, creditDetail, createCreditNote, creditPdfBuffer, sendCreditNote,
-    partners, savePayment, saveLoan, deletePayment, deleteLoan,
+    partners, savePayment, saveLoan, settleLoan, reopenLoan, deletePayment, deleteLoan,
     upsertClient, updateClient, deleteClient, saveProduct,
     getQuote, quoteDetail, listQuotes, saveQuote, submitQuote, decideQuote, sendQuote, closeQuote, reopenQuote, deleteQuote, deleteInvoice, deleteProduct, deleteExpense, clientUsage, duplicateQuote, quotePdfBuffer, totals,
     getInvoice, createInvoice, invoiceDetail, invoicePdfBuffer, sendInvoice, markPaid, setInvoiceStatus, onlinePaid, publicInvoice,

@@ -148,3 +148,7 @@ A second copy of the app, `dar-al-bunyan-test`, runs from the **`staging`** bran
 - **Set up once:** Render → New → Blueprint → this repository (it creates the test service from `render.yaml`), then set `BASE_URL` and `ADMIN1_PASSWORD` for it. (It needs the Starter plan for the disk, like the live app.)
 - **Copy of live data:** in the live app, Settings → Backups → Download the latest backup. In the test app, Settings → *Test environment* → *Load a live backup*. The test app restarts with that data; sign in with your live account. Repeat any time to refresh it.
 - **Work flow:** push new work to the `staging` branch, try it in the test app, then merge it into `main` to go live.
+
+## Personal loans: Open and Settled
+
+A loan recorded on the Partners page is **Open**: it is deducted from the borrowing partner's share and paid back to the other partner. When it is paid back in full, click **Settle** (with the date). It stays on record as Settled, no longer affects any balance or report total, and shows in the statement of account. An admin can **Reopen** a loan marked by mistake. The Excel exports include Status and Settled on.

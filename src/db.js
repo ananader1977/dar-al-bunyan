@@ -346,6 +346,8 @@ function migrate(db) {
     addCol(db, 'quotations', 'po_no', "TEXT NOT NULL DEFAULT ''");
     db.exec("UPDATE quotations SET po_no=lpo WHERE lpo<>'' AND lower(lpo) NOT LIKE '%pending%'");
   }
+  addCol(db, 'partner_loans', 'settled_on', "TEXT NOT NULL DEFAULT ''"); // '' = still open
+  addCol(db, 'partner_loans', 'settled_by', 'INTEGER');
   addCol(db, 'quotations', 'remarks', "TEXT NOT NULL DEFAULT ''"); // internal remarks, never printed
   addCol(db, 'expenses', 'status', "TEXT NOT NULL DEFAULT 'approved'"); // pending / approved / returned
   addCol(db, 'expenses', 'review_note', "TEXT NOT NULL DEFAULT ''");
