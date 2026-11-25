@@ -368,7 +368,7 @@ async function jobChoices() {
   return rows;
 }
 /** Search box + tappable list to pick the job (quotation) of an expense (a plain list of buttons, so it works by touch on a phone). */
-function jobPicker(quotes, selectedId, fallbackLabel) {
+function jobPicker(quotes, selectedId, fallbackLabel, onPick = () => {}) {
   let current = selectedId ? String(selectedId) : '';
   const label = (q) => `${q.number} · ${q.client_name} · ${(q.subject || '').slice(0, 60)}${q.status !== 'accepted' ? ` (${q.status})` : ''}`;
   const chosen = h('div', { class: 'jobchosen' });
@@ -379,7 +379,7 @@ function jobPicker(quotes, selectedId, fallbackLabel) {
     return q ? label(q) : (fallbackLabel || `Job ${current}`);
   };
   const drawChosen = () => chosen.replaceChildren(h('span', { class: 'small muted' }, 'Selected: '), h('b', {}, nameOf()));
-  const item = (value, text) => h('button', { type: 'button', role: 'option', class: `jobitem${current === value ? ' on' : ''}`, onclick: () => { current = value; drawChosen(); draw(search.value); } }, text);
+  const item = (value, text) => h('button', { type: 'button', role: 'option', class: `jobitem${current === value ? ' on' : ''}`, onclick: () => { current = value; drawChosen(); draw(search.value); onPick(quotes.find((x) => String(x.id) === value) || null); } }, text);
   const draw = (term = '') => {
     const t = term.toLowerCase();
     const found = quotes.filter((q) => !t || `${q.number} ${q.client_name} ${q.subject}`.toLowerCase().includes(t)).slice(0, 80);
@@ -393,7 +393,13 @@ function jobPicker(quotes, selectedId, fallbackLabel) {
 
 function expenseDialog(e, quotes, done) {
   const lk = S.lk;
-  const job = jobPicker(quotes, e.quotation_id || null, e.quote_number);
+  let fillDesc = null, fillAmt = null; // values filled in from the chosen job, replaced only while the user has not typed their own
+  const prefill = (q) => {
+    if (e.id) return; // editing: never overwrite
+    if (f.description.value === (fillDesc ?? '') ) { fillDesc = q ? q.subject : null; f.description.value = fillDesc ?? ''; }
+    if (String(f.amount.value) === String(fillAmt ?? '')) { fillAmt = q && q.cost_total ? q.cost_total : null; f.amount.value = fillAmt ?? ''; }
+  };
+  const job = jobPicker(quotes, e.quotation_id || null, e.quote_number, prefill);
   const f = {
     paid_on: h('input', { type: 'date', value: e.paid_on || todayIso() }),
     cost_type: h('select', {}, lk.costTypes.map((t) => h('option', { value: t, selected: t === (e.cost_type || 'Material') }, t))),
@@ -401,6 +407,7 @@ function expenseDialog(e, quotes, done) {
     paid_by: h('select', {}, [lk.settings.partner_a, lk.settings.partner_b, 'Pending', 'Company'].map((p) => h('option', { value: p, selected: p === (e.paid_by || lk.settings.partner_a) }, p))),
     remarks: h('textarea', { rows: 2, value: e.remarks || '' }),
   };
+  if (!e.id && e.quotation_id) prefill(quotes.find((x) => x.id === e.quotation_id) || null); // opened from a job: start with its description and cost
   const save = async () => {
     const body = { ...Object.fromEntries(Object.entries(f).map(([k, x]) => [k, x.value])), quotation_id: job.value };
     const r = await run(() => (e.id ? A('PUT', `/expenses/${e.id}`, body) : A('POST', '/expenses', body)), isAdmin() ? 'Expense saved' : 'Expense saved: waiting for the owner\'s approval');
