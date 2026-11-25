@@ -4,7 +4,7 @@ import { HttpError } from './http.js';
 import { tx, COST_TYPES } from './db.js';
 import { round2, dateKey, parseDateKey } from './time.js';
 import { clampStr, isEmail } from './util.js';
-import { quotationPdf, invoicePdf, creditNotePdf } from './docs.js';
+import { quotationPdf, invoicePdf, creditNotePdf, jobCompletionPdf } from './docs.js';
 
 const STATUSES = ['draft', 'pending', 'approved', 'rejected', 'sent', 'accepted', 'declined'];
 const EDITABLE = new Set(['draft', 'rejected']);
@@ -306,6 +306,17 @@ export function createService(ctx) {
   function quotePdfBuffer(id) {
     const d = quoteDetail(id);
     return quotationPdf(d.quotation, d.lines, d.client, S());
+  }
+  function jcrPdfBuffer(id, { date, contact } = {}) {
+    const d = quoteDetail(id);
+    const q = d.quotation;
+    if (!['approved', 'sent', 'accepted'].includes(q.status)) bad('A job completion report can be printed once the quotation is approved.');
+    const c = d.client || {};
+    return jobCompletionPdf({
+      date: isoDate(date, today()), project: q.site || q.subject, lpo: q.lpo, number: q.number, manualNo: q.manual_no, subject: q.subject,
+      contact: clampStr(contact, 120) || [c.contact, c.phone].filter(Boolean).join(', '),
+      lines: d.lines.map((l) => ({ description: l.description, qty: l.qty, unit: l.unit })),
+    }, S());
   }
   async function sendQuote(user, id, { email = true, message = '', attachmentIds = [] } = {}) {
     const q = getQuote(id);
@@ -762,7 +773,7 @@ export function createService(ctx) {
     audit, listTrash, restoreTrash, purgeTrash, getExpense, reviewExpense, setJobPaid, creditDetail, createCreditNote, creditPdfBuffer, sendCreditNote,
     partners, savePayment, saveLoan, settleLoan, reopenLoan, deletePayment, deleteLoan,
     upsertClient, updateClient, deleteClient, saveProduct,
-    getQuote, quoteDetail, listQuotes, saveQuote, submitQuote, decideQuote, sendQuote, closeQuote, reopenQuote, deleteQuote, deleteInvoice, deleteProduct, deleteExpense, clientUsage, duplicateQuote, quotePdfBuffer, totals,
+    getQuote, quoteDetail, jcrPdfBuffer, listQuotes, saveQuote, submitQuote, decideQuote, sendQuote, closeQuote, reopenQuote, deleteQuote, deleteInvoice, deleteProduct, deleteExpense, clientUsage, duplicateQuote, quotePdfBuffer, totals,
     getInvoice, createInvoice, invoiceDetail, invoicePdfBuffer, sendInvoice, markPaid, setInvoiceStatus, onlinePaid, publicInvoice,
     saveExpense, listExpenses, finance, dashboard,
     listAttachments, addAttachment, getAttachment, removeAttachment, setSetting,

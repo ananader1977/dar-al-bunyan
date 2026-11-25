@@ -457,6 +457,7 @@ async function quoteDetail(el, id) {
   if (d.invoice) buttons.push(h('a', { class: 'btn alt', href: `#invoice/${d.invoice.id}` }, `Invoice ${d.invoice.number}`));
   if (isAdmin() && ['approved', 'sent', 'accepted', 'declined', 'pending'].includes(q.status) && !d.invoice) buttons.push(h('button', { class: 'btn alt', onclick: () => confirm('Reopen this quotation as a draft? It will need approval again.') && act('reopen', {}, 'Reopened as draft') }, 'Reopen'));
   buttons.push(h('a', { class: 'btn alt', href: `/api/app/quotations/${q.id}/pdf`, target: '_blank', rel: 'noopener' }, 'View PDF'));
+  if (['approved', 'sent', 'accepted'].includes(q.status)) buttons.push(h('button', { class: 'btn alt', onclick: () => jcrDialog(q, c) }, 'Job completion report'));
   buttons.push(h('button', { class: 'btn alt', onclick: async () => { const r = await run(() => A('POST', `/quotations/${q.id}/duplicate`, {}), 'Copy created'); if (r) go(`edit/${r.id}`); } }, 'Duplicate'));
   if (isAdmin()) buttons.push(h('button', { class: 'btn danger', onclick: async () => { if (await del.quote({ ...q, invoice_number: d.invoice?.number })) go('quotes'); } }, 'Delete quotation'));
 
@@ -564,4 +565,15 @@ function dashboardCharts(d) {
       h('p', { class: 'small muted' }, d.quoteMonths.map((m) => `${fmtMonth(m.month)}: ${m.n} quotations, ${m.won} accepted`).slice(-3).join(' · '))));
   }
   return h('div', { class: cards.length > 1 ? 'split' : '' }, cards);
+}
+
+// Job completion report: choose the report date and contact, then open the printable PDF.
+function jcrDialog(q, c) {
+  const date = h('input', { type: 'date', value: new Date(Date.now() + 4 * 3600 * 1000).toISOString().slice(0, 10) });
+  const contact = h('input', { value: [c?.contact, c?.phone].filter(Boolean).join(', '), placeholder: 'e.g. Ramdas, 0529629735' });
+  const open = () => window.open(`/api/app/quotations/${q.id}/jcr?date=${encodeURIComponent(date.value)}&contact=${encodeURIComponent(contact.value)}`, '_blank', 'noopener');
+  modal(h('h2', {}, `Job completion report - ${q.number}`),
+    h('p', { class: 'small muted' }, `Prints the project, LPO (${q.lpo || 'none'}), the system quotation ${q.number}${q.manual_no ? ' and the manual quotation ' + q.manual_no : ''}, and the work done, with signature blocks.`),
+    h('div', { class: 'grid2' }, field('Report date', date), field('Contact', contact)),
+    h('p', { class: 'actions' }, h('button', { class: 'btn red', onclick: () => { open(); closeModal(); } }, 'Open PDF to print'), h('button', { class: 'btn alt', onclick: closeModal }, 'Cancel')));
 }

@@ -144,6 +144,90 @@ export function quotationPdf(q, lines, client, s) {
   }, s);
 }
 
+/**
+ * Job completion report (JCR) for a quotation: letterhead, project / LPO / references, the work table,
+ * and signature blocks for the client's representative and site in-charge.
+ * jcr: { date, project, lpo, contact, number, manualNo, subject, lines: [{description, qty, unit}] }
+ */
+export function jobCompletionPdf(jcr, s) {
+  const pdf = new Pdf({ title: `Job completion report ${jcr.number}`, author: s.company_name });
+  const L = 50, R = PAGE_W - 50, GREY = '#4b5563';
+  const header = () => {
+    const lg = logo(); // the logo already carries the company name
+    if (lg) pdf.image(lg, L, 20, 73, 74);
+    else pdf.text(s.company_name.toUpperCase(), L, 50, { size: 13, bold: true, fill: NAVY });
+    pdf.rect(L, 98, R - L, 5, { fill: NAVY });
+    pdf.rect(L, 103, 90, 3, { fill: RED });
+  };
+  const footer = () => {
+    pdf.rect(0, PAGE_H - 58, PAGE_W, 26, { fill: GREY });
+    const o = { size: 8.5, bold: true, fill: '#ffffff' };
+    pdf.text(s.company_email || 'info@dar-albunyan.ae', 70, PAGE_H - 41, o);
+    pdf.text(s.company_phone || '', 215, PAGE_H - 41, o);
+    pdf.text(s.company_address || '', 300, PAGE_H - 41, { ...o, size: 7.5 });
+  };
+  header();
+  pdf.rect(L, 118, R - L, 24, { stroke: '#000000', lineWidth: 1 });
+  pdf.text('JOB COMPLETION REPORT', (L + R) / 2, 134, { size: 11, bold: true, align: 'center', fill: '#000000' });
+
+  let y = 172;
+  const info = [['Date', fmtDay(jcr.date)], ['Project', jcr.project || '-'], ['LPO No', jcr.lpo || '-'], ['Contact', jcr.contact || '-'], ['Quotation No (system)', jcr.number]];
+  if (jcr.manualNo) info.push(['Manual quotation No', jcr.manualNo]);
+  info.forEach(([k, v]) => {
+    pdf.text(`${k}:`, L + 5, y, { size: 10, fill: INK });
+    pdf.text(String(v), L + 135, y, { size: 10, bold: k.includes('uotation'), fill: INK });
+    y += 16;
+  });
+  y += 4;
+  pdf.text('The above site work has been done and attaching the report.', L + 5, y, { size: 10, fill: INK });
+  y += 22;
+
+  const cx = [L, L + 140, L + 345, L + 400, R]; // PUMP DETAILS | DESCRIPTION | UNITS | REMARKS
+  const head = () => {
+    pdf.rect(L, y, R - L, 20, { stroke: '#000000', lineWidth: 1 });
+    ['PUMP DETAILS', 'DESCRIPTION', 'UNITS', 'REMARKS'].forEach((t, i) => pdf.text(t, (cx[i] + cx[i + 1]) / 2, y + 14, { size: 9, bold: true, align: 'center', fill: '#000000' }));
+    cx.slice(1, 4).forEach((x) => pdf.line(x, y, x, y + 20, { stroke: '#000000', lineWidth: 1 }));
+    y += 20;
+  };
+  head();
+  let top = y;
+  const closeTable = (minH) => {
+    const bottom = Math.max(y, top + minH);
+    pdf.rect(L, top, R - L, bottom - top, { stroke: '#000000', lineWidth: 1 });
+    cx.slice(1, 4).forEach((x) => pdf.line(x, top, x, bottom, { stroke: '#000000', lineWidth: 1 }));
+    y = bottom;
+  };
+  const subject = pdf.wrap(jcr.subject || '', cx[1] - cx[0] - 12, 9.5);
+  let ry = y + 8, firstRow = true;
+  jcr.lines.forEach((l) => {
+    const dl = pdf.wrap(l.description, cx[2] - cx[1] - 12, 9.5, true);
+    const rows = Math.max(dl.length, firstRow ? subject.length : 1);
+    if (ry + rows * 12 > PAGE_H - 330) { y = ry; closeTable(0); pdf.newPage(); header(); y = 125; head(); top = y; ry = y + 8; }
+    if (firstRow) subject.forEach((t, i) => pdf.text(t, cx[0] + 6, ry + 9 + i * 12, { size: 9.5, fill: INK }));
+    dl.forEach((t, i) => pdf.text(t, cx[1] + 6, ry + 9 + i * 12, { size: 9.5, bold: true, fill: INK }));
+    pdf.text(`${qtyText(l.qty)} ${String(l.unit || 'JOB').toUpperCase()}`, cx[2] + 6, ry + 9, { size: 9.5, fill: INK });
+    pdf.text('WORK COMPLETED', cx[3] + 6, ry + 9, { size: 9, fill: INK });
+    ry += rows * 12 + 8;
+    firstRow = false;
+  });
+  y = ry;
+  closeTable(190);
+
+  y += 22;
+  pdf.text('The above work has been satisfactorily repaired/replaced and found good working condition.', L + 5, y, { size: 9.5, fill: INK });
+  y += 55;
+  pdf.text('Name/ Signature/ Tel No.:', L + 5, y, { size: 8.5, fill: INK });
+  pdf.line(L + 115, y + 3, L + 270, y + 3, { stroke: '#000000' });
+  y += 45;
+  pdf.text('Site in-charge:', L + 5, y, { size: 8.5, fill: INK });
+  pdf.line(L + 115, y + 3, L + 270, y + 3, { stroke: '#000000' });
+  y += 45;
+  pdf.text('NOTE:', L + 5, y, { size: 9, bold: true, fill: '#000000' });
+  pdf.text('Warranty is not applicable for failures resulting from dry operation.', L + 40, y, { size: 9, fill: INK });
+  pdf.pages.forEach((_, i) => { pdf.cur = pdf.pages[i]; footer(); });
+  return pdf.toBuffer();
+}
+
 const STAMP = (ts) => {
   const d = new Date(ts + 4 * 3600 * 1000);
   const p2 = (n) => String(n).padStart(2, '0');

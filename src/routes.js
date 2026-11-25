@@ -180,6 +180,10 @@ export function registerRoutes(app, ctx) {
   });
   app.post('/api/app/quotations/:id/invoice', U, async (req, res) => res.json(svc.invoiceDetail(svc.createInvoice(req.user, id(req), await req.json()))));
   app.get('/api/app/invoices/:id', U, (req, res) => res.json(svc.invoiceDetail(id(req))));
+  app.get('/api/app/quotations/:id/jcr', U, (req, res) => {
+    const q = svc.getQuote(id(req));
+    res.send(svc.jcrPdfBuffer(q.id, { date: req.query.date, contact: req.query.contact }), 'application/pdf', 200, pdfHeaders(`JCR-${q.number}.pdf`, req.query.download === '1'));
+  });
   app.get('/api/app/invoices/:id/pdf', U, (req, res) => {
     const inv = svc.getInvoice(id(req));
     res.send(svc.invoicePdfBuffer(inv.id), 'application/pdf', 200, pdfHeaders(`Invoice-${inv.number}.pdf`, req.query.download === '1'));

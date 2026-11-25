@@ -33,9 +33,26 @@ test('financial report export lists the client LPO and manual quotation of each 
     await t.login('admin');
     const q = (await t.call('admin', 'POST', '/api/app/quotations', t.quote({ lpo: '202609999', manual_no: 'DABTS/118/26' }))).body.quotation;
     for (const to of ['submit', 'approve', 'send', 'accept']) await t.call('admin', 'POST', `/api/app/quotations/${q.id}/${to}`);
-    const job = t.ctx.svc?.finance ? t.ctx.svc.finance({}).jobs[0] : (await t.call('admin', 'GET', '/api/app/finance')).body.jobs[0];
+    const job = t.ctx.service.finance({}).jobs[0] || (await t.call('admin', 'GET', '/api/app/finance')).body.jobs[0];
     assert.equal(job.lpo, '202609999'); assert.equal(job.manual_no, 'DABTS/118/26');
     const cookie = (await t.call('admin', 'GET', '/api/me')).status; // signed in
     assert.equal(cookie, 200);
+  } finally { await t.close(); }
+});
+
+test('job completion report PDF: only for approved quotations, shows both quotation numbers', async () => {
+  const t = await startTestApp();
+  try {
+    await t.login('admin');
+    const q = (await t.call('admin', 'POST', '/api/app/quotations', t.quote({ lpo: '202603430', manual_no: 's00029' }))).body.quotation;
+    assert.notEqual((await t.call('admin', 'GET', `/api/app/quotations/${q.id}/jcr`)).status, 200); // still a draft
+    for (const to of ['submit', 'approve']) await t.call('admin', 'POST', `/api/app/quotations/${q.id}/${to}`);
+    const buf = t.ctx.service.jcrPdfBuffer(q.id, { date: '2026-10-20', contact: 'Ramdas, 0529629735' });
+    assert.equal(buf.subarray(0, 5).toString(), '%PDF-');
+    const fs = await import('node:fs');
+    fs.writeFileSync('/tmp/jcr-sample.pdf', buf);
+    let txt = null;
+    try { txt = (await import('node:child_process')).execFileSync('pdftotext', ['-layout', '/tmp/jcr-sample.pdf', '-'], { encoding: 'utf8' }); } catch { /* poppler not installed: skip the text check */ }
+    if (txt) for (const w of ['JOB COMPLETION REPORT', '202603430', 's00029', q.number, 'WORK COMPLETED']) assert.ok(txt.includes(w), w);
   } finally { await t.close(); }
 });
