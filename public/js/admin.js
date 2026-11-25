@@ -367,20 +367,28 @@ async function jobChoices() {
   for (const st of ['accepted', 'sent', 'approved', 'pending', 'draft']) rows.push(...(await A('GET', `/quotations?status=${st}`)).rows);
   return rows;
 }
-/** Search box + list to pick the job (quotation) of an expense. */
+/** Search box + tappable list to pick the job (quotation) of an expense (a plain list of buttons, so it works by touch on a phone). */
 function jobPicker(quotes, selectedId, fallbackLabel) {
-  const sel = h('select', { size: 6, class: 'jobsel' });
+  let current = selectedId ? String(selectedId) : '';
+  const label = (q) => `${q.number} · ${q.client_name} · ${(q.subject || '').slice(0, 60)}${q.status !== 'accepted' ? ` (${q.status})` : ''}`;
+  const chosen = h('div', { class: 'jobchosen' });
+  const list = h('div', { class: 'joblist', role: 'listbox' });
+  const nameOf = () => {
+    if (!current) return 'Other expense (no job): rent, fuel, parking…';
+    const q = quotes.find((x) => String(x.id) === current);
+    return q ? label(q) : (fallbackLabel || `Job ${current}`);
+  };
+  const drawChosen = () => chosen.replaceChildren(h('span', { class: 'small muted' }, 'Selected: '), h('b', {}, nameOf()));
+  const item = (value, text) => h('button', { type: 'button', role: 'option', class: `jobitem${current === value ? ' on' : ''}`, onclick: () => { current = value; drawChosen(); draw(search.value); } }, text);
   const draw = (term = '') => {
     const t = term.toLowerCase();
-    const list = quotes.filter((q) => !t || `${q.number} ${q.client_name} ${q.subject}`.toLowerCase().includes(t)).slice(0, 80);
-    sel.replaceChildren(h('option', { value: '', selected: !selectedId }, 'Other expense (no job): rent, fuel, parking…'),
-      ...list.map((q) => h('option', { value: q.id, selected: q.id === selectedId }, `${q.number} · ${q.client_name} · ${q.subject.slice(0, 60)}${q.status !== 'accepted' ? ` (${q.status})` : ''}`)));
-    if (selectedId && !list.some((q) => q.id === selectedId)) sel.append(h('option', { value: selectedId, selected: true }, fallbackLabel || `Job ${selectedId}`));
+    const found = quotes.filter((q) => !t || `${q.number} ${q.client_name} ${q.subject}`.toLowerCase().includes(t)).slice(0, 80);
+    list.replaceChildren(item('', 'Other expense (no job): rent, fuel, parking…'), ...found.map((q) => item(String(q.id), label(q))));
+    if (!found.length && t) list.append(h('p', { class: 'small muted' }, 'No job matches this search.'));
   };
-  draw();
-  sel.addEventListener('change', () => { selectedId = Number(sel.value) || null; });
   const search = h('input', { type: 'search', placeholder: 'Search job number, customer or subject', oninput: (e) => draw(e.target.value) });
-  return { el: h('div', {}, search, sel), get value() { return sel.value; } };
+  drawChosen(); draw();
+  return { el: h('div', {}, chosen, search, list), get value() { return current; } };
 }
 
 function expenseDialog(e, quotes, done) {
